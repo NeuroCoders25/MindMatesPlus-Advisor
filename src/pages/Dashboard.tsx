@@ -1,11 +1,12 @@
 import React from 'react';
-import { 
-  Users, 
-  AlertCircle, 
-  CheckCircle2, 
+import {
+  Users,
+  AlertCircle,
+  CheckCircle2,
   TrendingUp,
   Activity
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import DashboardCard from '../components/DashboardCard';
 import AlertPanel from '../components/AlertPanel';
 import UserTable from '../components/UserTable';
@@ -23,6 +24,10 @@ import {
   Cell
 } from 'recharts';
 import { motion } from 'motion/react';
+
+import { useEffect } from "react";
+import { db } from "../lib/firebase";
+import { collection, getDocs } from "firebase/firestore";
 
 const trendData = [
   { name: 'Mon', distress: 4, wellness: 7 },
@@ -43,6 +48,21 @@ const emotionData = [
 ];
 
 export default function Dashboard() {
+  const { advisorProfile } = useAuth();
+  const advisorName = advisorProfile?.name ?? 'Advisor';
+
+  useEffect(() => {
+    const test = async () => {
+      try {
+        const snap = await getDocs(collection(db, "users"));
+        console.log("✅ Firebase Connected! Documents found:", snap.size);
+      } catch (error) {
+        console.error("❌ Firebase connection failed:", error);
+      }
+    };
+    test();
+  }, []);
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
@@ -51,7 +71,7 @@ export default function Dashboard() {
     >
       <header>
         <h1 className="text-3xl font-bold text-slate-800">Advisor Dashboard</h1>
-        <p className="text-slate-500 mt-1">Welcome back, Dr. Hiroshan. Here's an overview of system health.</p>
+        <p className="text-slate-500 mt-1">Welcome back, {advisorName}. Here's an overview of system health.</p>
       </header>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

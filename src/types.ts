@@ -55,3 +55,20 @@ export interface AdvisorNote {
   timestamp: string;
   category: 'General' | 'Clinical' | 'Intervention';
 }
+
+export interface PeerGroup {
+  id: string;
+  name: string;
+  memberCount?: number;
+  createdAt?: string;
+  status?: string;
+  category?: string;
+}
+
+export interface LiveChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  timestamp: Date | null;
+}
