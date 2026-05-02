@@ -13,12 +13,13 @@ import {
   HeartPulse
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import logo from '../assets/logo.png';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
   { icon: AlertTriangle, label: 'Critical Cases', path: '/critical-cases' },
   { icon: Users, label: 'User Monitoring', path: '/monitoring' },
-  { icon: MessageSquare, label: 'Chat Review', path: '/chat-review' },
+  { icon: MessageSquare, label: 'Chat Monitoring', path: '/chat-review' },
   { icon: BookOpen, label: 'Journal Review', path: '/journal-review' },
   { icon: BarChart3, label: 'AI Insights', path: '/insights' },
   { icon: FileText, label: 'Reports', path: '/reports' },
@@ -29,11 +30,14 @@ const navItems = [
 export default function Sidebar() {
   return (
     <aside className="w-64 h-screen bg-white border-r border-slate-200 flex flex-col sticky top-0">
-      <div className="p-6 flex items-center gap-3">
-        <div className="w-10 h-10 bg-brand-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-brand-200">
-          <HeartPulse size={24} />
-        </div>
-        <span className="font-bold text-xl tracking-tight text-slate-800">MindMates+</span>
+      <div className="p-12 flex items-center gap-3">
+        <div className="flex items-center space-x-2">
+  <img 
+    src={logo} 
+    alt="MindMates" 
+    className="h-15 object-contain"
+  />
+</div>
       </div>
       
       <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">

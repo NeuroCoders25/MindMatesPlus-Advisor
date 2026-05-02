@@ -24,6 +24,10 @@ import {
 } from 'recharts';
 import { motion } from 'motion/react';
 
+import { useEffect } from "react";
+import { db } from "../lib/firebase";
+import { collection, getDocs } from "firebase/firestore";
+
 const trendData = [
   { name: 'Mon', distress: 4, wellness: 7 },
   { name: 'Tue', distress: 3, wellness: 8 },
@@ -43,6 +47,18 @@ const emotionData = [
 ];
 
 export default function Dashboard() {
+  useEffect(() => {
+    const test = async () => {
+      try {
+        const snap = await getDocs(collection(db, "users"));
+        console.log("✅ Firebase Connected! Documents found:", snap.size);
+      } catch (error) {
+        console.error("❌ Firebase connection failed:", error);
+      }
+    };
+    test();
+  }, []);
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
