@@ -7,11 +7,18 @@ import {
   sendPasswordResetEmail,
   onAuthStateChanged,
 } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+
+export interface AdvisorProfile {
+  name: string;
+  role: string;
+  email: string;
+}
 
 interface AuthContextType {
   currentUser: User | null;
+  advisorProfile: AdvisorProfile | null;
   loading: boolean;
   signup: (email: string, password: string, name: string, role: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
@@ -29,6 +36,7 @@ export function useAuth() {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [advisorProfile, setAdvisorProfile] = useState<AdvisorProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   async function signup(email: string, password: string, name: string, role: string) {
@@ -40,6 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       role,
       createdAt: new Date().toISOString(),
     });
+    setAdvisorProfile({ name, role, email });
   }
 
   async function login(email: string, password: string) {
@@ -47,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   function logout() {
+    setAdvisorProfile(null);
     return signOut(auth);
   }
 
@@ -55,15 +65,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
+      if (user) {
+        try {
+          const snap = await getDoc(doc(db, 'advisors', user.uid));
+          if (snap.exists()) {
+            const data = snap.data();
+            setAdvisorProfile({ name: data.name, role: data.role, email: data.email });
+          }
+        } catch {
+          // profile fetch failed silently
+        }
+      } else {
+        setAdvisorProfile(null);
+      }
       setLoading(false);
     });
     return unsubscribe;
   }, []);
 
   return (
-    <AuthContext.Provider value={{ currentUser, loading, signup, login, logout, resetPassword }}>
+    <AuthContext.Provider value={{ currentUser, advisorProfile, loading, signup, login, logout, resetPassword }}>
       {children}
     </AuthContext.Provider>
   );
