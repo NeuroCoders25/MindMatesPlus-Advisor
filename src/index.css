@@ -3,21 +3,22 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   
-  --color-brand-50: #f0f4ff;
-  --color-brand-100: #e0e9ff;
-  --color-brand-200: #c1d3ff;
-  --color-brand-300: #92b1ff;
-  --color-brand-400: #5c85ff;
-  --color-brand-500: #3354ff;
-  --color-brand-600: #1a2eff;
-  --color-brand-700: #0a19ff;
-  --color-brand-800: #000ce6;
-  --color-brand-900: #0009b3;
+  --color-brand-50: #f0f1fa;
+  --color-brand-100: #e1e3f5;
+  --color-brand-200: #c3c7eb;
+  --color-brand-300: #a5ace1;
+  --color-brand-400: #6976cd;
+  --color-brand-500: #040862;
+  --color-brand-600: #03064e;
+  --color-brand-700: #02043a;
+  --color-brand-800: #010326;
+  --color-brand-900: #000112;
 
   --color-risk-low: #10b981;
   --color-risk-medium: #f59e0b;
   --color-risk-high: #ef4444;
   --color-risk-critical: #7f1d1d;
+  --color-logo-red: #ff3b30;
 }
 
 @layer base {
