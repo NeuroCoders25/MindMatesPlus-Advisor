@@ -1,16 +1,18 @@
 import React from 'react';
 import { Case } from '../types';
 import RiskBadge from './RiskBadge';
-import { Clock, AlertCircle, ChevronRight } from 'lucide-react';
+import { Clock, AlertCircle, ChevronRight, StickyNote } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface CaseCardProps {
   caseData: Case;
+  onViewDetails?: () => void;
+  onAddNote?: () => void;
 }
 
-export default function CaseCard({ caseData }: CaseCardProps) {
+export default function CaseCard({ caseData, onViewDetails, onAddNote }: CaseCardProps) {
   return (
-    <div className="glass-card p-5 hover:shadow-md transition-all group cursor-pointer border-l-4 border-l-transparent hover:border-l-brand-500">
+    <div className="glass-card p-5 hover:shadow-md transition-all border-l-4 border-l-transparent hover:border-l-brand-500">
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-lg">
@@ -26,23 +28,37 @@ export default function CaseCard({ caseData }: CaseCardProps) {
         </div>
         <RiskBadge level={caseData.riskLevel} />
       </div>
-      
+
       <div className="bg-slate-50 rounded-xl p-3 mb-4 flex items-start gap-3">
         <AlertCircle size={16} className="text-brand-500 mt-0.5 shrink-0" />
         <p className="text-sm text-slate-600 leading-relaxed">
           <span className="font-semibold text-slate-800">Reason:</span> {caseData.reason}
         </p>
       </div>
-      
-      <div className="flex items-center justify-between">
-        <span className={cn(
-          "text-xs font-bold px-2 py-1 rounded-lg uppercase tracking-wider",
-          caseData.status === 'Open' ? 'bg-brand-50 text-brand-600' :
-          caseData.status === 'Escalated' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
-        )}>
-          {caseData.status}
-        </span>
-        <button className="flex items-center gap-1 text-sm font-semibold text-brand-600 group-hover:translate-x-1 transition-transform">
+
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            'text-xs font-bold px-2 py-1 rounded-lg uppercase tracking-wider',
+            caseData.status === 'Open' ? 'bg-brand-50 text-brand-600' :
+            caseData.status === 'Escalated' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
+          )}>
+            {caseData.status}
+          </span>
+          {onAddNote && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onAddNote(); }}
+              className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+              title="Add note"
+            >
+              <StickyNote size={14} />
+            </button>
+          )}
+        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onViewDetails?.(); }}
+          className="flex items-center gap-1 text-sm font-semibold text-brand-600 hover:translate-x-1 transition-transform"
+        >
           View Details <ChevronRight size={16} />
         </button>
       </div>
