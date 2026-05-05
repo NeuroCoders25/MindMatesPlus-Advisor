@@ -11,7 +11,8 @@ import {
   StickyNote,
   Settings,
   LogOut,
-  ChevronUp
+  ChevronUp,
+  Library
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import logo from '../assets/logo.png';
@@ -23,6 +24,7 @@ const navItems = [
   { icon: Users, label: 'User Monitoring', path: '/monitoring' },
   { icon: MessageSquare, label: 'Chat Monitoring', path: '/chat-review' },
   { icon: BookOpen, label: 'Journal Review', path: '/journal-review' },
+  { icon: Library, label: 'Resources', path: '/resources' },
   { icon: BarChart3, label: 'AI Insights', path: '/insights' },
   { icon: FileText, label: 'Reports', path: '/reports' },
   { icon: StickyNote, label: 'Advisor Notes', path: '/notes' },

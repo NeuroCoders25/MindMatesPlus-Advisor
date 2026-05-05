@@ -19,6 +19,7 @@ import AIInsights from './pages/AIInsights';
 import Reports from './pages/Reports';
 import AdvisorNotes from './pages/AdvisorNotes';
 import Settings from './pages/Settings';
+import Resources from './pages/Resources';
 
 function ProtectedLayout() {
   const { currentUser, loading } = useAuth();
@@ -38,6 +39,7 @@ function ProtectedLayout() {
               <Route path="/monitoring" element={<UserMonitoring />} />
               <Route path="/chat-review" element={<ChatReview />} />
               <Route path="/journal-review" element={<JournalReview />} />
+              <Route path="/resources" element={<Resources />} />
               <Route path="/insights" element={<AIInsights />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/notes" element={<AdvisorNotes />} />
