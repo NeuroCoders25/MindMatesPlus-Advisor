@@ -113,3 +113,15 @@ export interface LiveChatMessage {
   text: string;
   timestamp: Date | null;
 }
+
+export interface Resource {
+  id: string;
+  title: string;
+  category: string;
+  resource_type: 'text' | 'image';
+  resource: string; // text content
+  image_url?: string; // image URL if applicable
+  author: string;
+  authorId: string;
+  createdAt: string;
+}
