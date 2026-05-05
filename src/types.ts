@@ -56,6 +56,47 @@ export interface AdvisorNote {
   category: 'General' | 'Clinical' | 'Intervention';
 }
 
+export interface MentalHealthProfile {
+  diagnosis?: string[];
+  conditions?: string[];
+  riskFactors?: string[];
+  currentState?: string;
+  moodScore?: number;
+  lastAssessment?: string;
+  notes?: string;
+  medications?: string[];
+  triggers?: string[];
+  // DASS-21 classification from onboarding questionnaire
+  classificationLevel?: 'low' | 'moderate' | 'severe';
+  depressionScore?: number;
+  anxietyScore?: number;
+  stressScore?: number;
+  totalScore?: number;
+  groupCategory?: string;
+}
+
+export interface QuestionnaireResponse {
+  id: string;
+  question: string;
+  answer: string | number;
+  score?: number;
+  category?: string;
+  timestamp?: string;
+}
+
+export interface UserDetails {
+  id: string;
+  name: string;
+  email?: string;
+  age?: number;
+  gender?: string;
+  joinedDate?: string;
+  riskLevel?: RiskLevel;
+  status?: string;
+  lastActivity?: string;
+  mentalHealthProfile?: MentalHealthProfile;
+}
+
 export interface PeerGroup {
   id: string;
   name: string;

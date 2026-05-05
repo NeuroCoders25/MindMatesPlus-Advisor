@@ -1,8 +1,25 @@
 import React from 'react';
 import { Settings as SettingsIcon, Bell, Shield, User, Globe, Moon, Save } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useAuth } from '../context/AuthContext';
+
+function getInitials(name: string) {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase())
+    .slice(0, 2)
+    .join('');
+}
 
 export default function Settings() {
+  const { advisorProfile } = useAuth();
+  
+  const name = advisorProfile?.name ?? 'Advisor';
+  const role = advisorProfile?.role ?? '';
+  const email = advisorProfile?.email ?? '';
+  const initials = getInitials(name);
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
@@ -44,7 +61,7 @@ export default function Settings() {
             <div className="space-y-6">
               <div className="flex items-center gap-6">
                 <div className="w-20 h-20 rounded-3xl bg-brand-100 flex items-center justify-center text-brand-600 text-3xl font-bold border-4 border-white shadow-lg">
-                  HV
+                  {initials}
                 </div>
                 <button className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors">
                   Change Photo
@@ -54,17 +71,17 @@ export default function Settings() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Full Name</label>
-                  <input type="text" defaultValue="Dr. Hiroshan Victor" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all" />
+                  <input type="text" defaultValue={name} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Title</label>
-                  <input type="text" defaultValue="Senior Psychologist" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all" />
+                  <input type="text" defaultValue={role} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all" />
                 </div>
               </div>
               
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Email Address</label>
-                <input type="email" defaultValue="hiroshanvictor@gmail.com" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all" />
+                <input type="email" defaultValue={email} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all" />
               </div>
             </div>
           </div>
@@ -103,3 +120,4 @@ export default function Settings() {
     </motion.div>
   );
 }
+
