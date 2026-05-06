@@ -41,7 +41,7 @@ export default function Resources() {
   const [editingResource, setEditingResource] = useState<Resource | null>(null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'text' | 'image'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'text' | 'image'>('image');
   const [isLoading, setIsLoading] = useState(true);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
