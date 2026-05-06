@@ -27,7 +27,7 @@ const navItems = [
   { icon: Library, label: 'Resources', path: '/resources' },
   { icon: BarChart3, label: 'AI Insights', path: '/insights' },
   { icon: FileText, label: 'Reports', path: '/reports' },
-  { icon: StickyNote, label: 'Advisor Notes', path: '/notes' },
+  { icon: MessageSquare, label: 'Admin Chats', path: '/chat' },
   { icon: Settings, label: 'Settings', path: '/settings' },
 ];
 
@@ -108,7 +108,7 @@ export default function Sidebar() {
           onClick={() => setMenuOpen((v) => !v)}
           className="w-full text-left bg-slate-50 hover:bg-slate-100 rounded-2xl p-4 transition-colors"
         >
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Advisor</p>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Admin Mode</p>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-brand-100 border-2 border-white shadow-sm flex items-center justify-center text-brand-600 font-bold text-sm flex-shrink-0">
               {initials}

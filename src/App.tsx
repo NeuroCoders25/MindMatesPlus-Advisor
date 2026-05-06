@@ -17,7 +17,7 @@ import ChatReview from './pages/ChatReview';
 import JournalReview from './pages/JournalReview';
 import AIInsights from './pages/AIInsights';
 import Reports from './pages/Reports';
-import AdvisorNotes from './pages/AdvisorNotes';
+import AdvisorChat from './pages/AdvisorChat';
 import Settings from './pages/Settings';
 import Resources from './pages/Resources';
 
@@ -42,7 +42,7 @@ function ProtectedLayout() {
               <Route path="/resources" element={<Resources />} />
               <Route path="/insights" element={<AIInsights />} />
               <Route path="/reports" element={<Reports />} />
-              <Route path="/notes" element={<AdvisorNotes />} />
+              <Route path="/chat" element={<AdvisorChat />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </div>
