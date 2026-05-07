@@ -6,9 +6,10 @@ import { cn } from '../lib/utils';
 
 interface UserTableProps {
   users: User[];
+  onViewDetails?: (user: User) => void;
 }
 
-export default function UserTable({ users }: UserTableProps) {
+export default function UserTable({ users, onViewDetails }: UserTableProps) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left border-collapse">
@@ -53,7 +54,10 @@ export default function UserTable({ users }: UserTableProps) {
               </td>
               <td className="px-6 py-4 text-right">
                 <div className="flex items-center justify-end gap-2">
-                  <button className="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-all">
+                  <button
+                    onClick={() => onViewDetails?.(user)}
+                    className="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-all"
+                  >
                     <ExternalLink size={18} />
                   </button>
                   <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
