@@ -4,6 +4,7 @@ import { motion } from 'motion/react';
 import CaseCard from '../components/CaseCard';
 import NotesModal from '../components/NotesModal';
 import UserDetailsModal from '../components/UserDetailsModal';
+import DirectChatModal from '../components/DirectChatModal';
 import { Case } from '../types';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, getDoc, doc } from 'firebase/firestore';
@@ -63,6 +64,7 @@ export default function CriticalCases() {
 
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isDirectChatOpen, setIsDirectChatOpen] = useState(false);
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -168,6 +170,11 @@ export default function CriticalCases() {
     setIsNotesModalOpen(true);
   };
 
+  const handleOpenChat = (c: Case) => {
+    setSelectedCase(c);
+    setIsDirectChatOpen(true);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -254,6 +261,7 @@ export default function CriticalCases() {
               caseData={c}
               onViewDetails={() => handleViewDetails(c)}
               onAddNote={() => handleAddNote(c)}
+              onOpenChat={() => handleOpenChat(c)}
             />
           ))}
         </div>
@@ -290,6 +298,22 @@ export default function CriticalCases() {
           userId={selectedCase.userId}
           userName={selectedCase.userName}
           riskLevel={selectedCase.riskLevel}
+          onOpenChat={() => {
+            setIsDetailsModalOpen(false);
+            setIsDirectChatOpen(true);
+          }}
+        />
+      )}
+
+      {selectedCase && (
+        <DirectChatModal
+          isOpen={isDirectChatOpen}
+          onClose={() => setIsDirectChatOpen(false)}
+          caseData={selectedCase}
+          onViewProfile={() => {
+            setIsDirectChatOpen(false);
+            setIsDetailsModalOpen(true);
+          }}
         />
       )}
     </motion.div>

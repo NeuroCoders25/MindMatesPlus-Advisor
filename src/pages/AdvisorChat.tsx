@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Search, 
-  Phone, 
-  Video, 
-  MoreVertical, 
-  Send, 
+import {
+  Search,
+  Phone,
+  Video,
+  MoreVertical,
+  Send,
   MessageSquare,
   User,
   ShieldCheck,
@@ -12,13 +12,13 @@ import {
   Paperclip
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  collection, 
-  addDoc, 
-  onSnapshot, 
-  query, 
-  orderBy, 
-  serverTimestamp, 
+import {
+  collection,
+  addDoc,
+  onSnapshot,
+  query,
+  orderBy,
+  serverTimestamp,
   Timestamp,
   doc,
   setDoc,
@@ -86,7 +86,7 @@ export default function AdvisorChat() {
   // Fetch all admins
   useEffect(() => {
     const q = query(collection(db, 'admins'), orderBy('name', 'asc'));
-    
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const adminMap: Record<string, Admin> = {};
       snapshot.forEach((doc) => {
@@ -126,7 +126,7 @@ export default function AdvisorChat() {
         chatList.push({ id: doc.id, ...doc.data() } as Chat);
       });
       setChats(chatList);
-      
+
       // If we have a selected chat, update it with fresh data
       if (selectedChat) {
         const updated = chatList.find(c => c.id === selectedChat.id);
@@ -152,21 +152,21 @@ export default function AdvisorChat() {
     const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
       const msgList: Message[] = [];
       const unreadIds: string[] = [];
-      
+
       snapshot.forEach((doc) => {
         const data = doc.data();
-        const msg = { 
-          id: doc.id, 
-          messageText: data.messageText || data.text || '', // Fallback for old data if any
+        const msg = {
+          id: doc.id,
+          messageText: data.messageText || data.text || '',
           senderId: data.senderId,
           senderRole: data.senderRole || '',
           receiverId: data.receiverId || '',
           messageType: data.messageType || 'text',
-          createdAt: data.createdAt || data.timestamp, // Fallback
+          createdAt: data.createdAt || data.timestamp,
           isRead: data.isRead || false
         } as Message;
         msgList.push(msg);
-        
+
         // Mark admin messages as read
         if (msg.senderRole === 'admin' && !msg.isRead) {
           unreadIds.push(doc.id);
@@ -228,7 +228,7 @@ export default function AdvisorChat() {
 
     // Use adminId_advisorId as per requirement
     const chatId = `${admin.id}_${currentUser.uid}`;
-    
+
     // Check if chat exists in our local list first
     const existingChat = chats.find(c => c.id === chatId);
     if (existingChat) {
@@ -261,12 +261,12 @@ export default function AdvisorChat() {
     }
   };
 
-  const sortedAdmins = Object.values(admins).filter(admin => 
+  const sortedAdmins = Object.values(admins).filter(admin =>
     admin.name.toLowerCase().includes(searchQuery.toLowerCase())
   ).sort((a, b) => {
     const chatA = chats.find(c => c.participants.includes(a.id));
     const chatB = chats.find(c => c.participants.includes(b.id));
-    
+
     if (chatA && chatB) {
       const timeA = chatA.updatedAt instanceof Timestamp ? chatA.updatedAt.toMillis() : (chatA.updatedAt?.seconds ? chatA.updatedAt.seconds * 1000 : 0);
       const timeB = chatB.updatedAt instanceof Timestamp ? chatB.updatedAt.toMillis() : (chatB.updatedAt?.seconds ? chatB.updatedAt.seconds * 1000 : 0);
@@ -277,7 +277,7 @@ export default function AdvisorChat() {
     return a.name.localeCompare(b.name);
   });
 
-  const selectedChatAdmin = selectedChat 
+  const selectedChatAdmin = selectedChat
     ? admins[selectedChat.participants.find(id => id !== currentUser?.uid) || '']
     : null;
 
@@ -296,7 +296,7 @@ export default function AdvisorChat() {
   }
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       className="h-[calc(100vh-140px)] flex bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm"
@@ -308,12 +308,12 @@ export default function AdvisorChat() {
             <h1 className="text-2xl font-bold text-slate-800">Admin Chats</h1>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Admin Network</p>
           </div>
-          
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Search admins..." 
+            <input
+              type="text"
+              placeholder="Search admins..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 focus:border-brand-400 rounded-xl outline-none text-sm transition-all shadow-sm"
@@ -326,7 +326,7 @@ export default function AdvisorChat() {
             {sortedAdmins.map((admin) => {
               const chat = chats.find(c => c.participants.includes(admin.id));
               const isSelected = selectedChat?.participants.includes(admin.id);
-              
+
               return (
                 <button
                   key={admin.id}
@@ -334,7 +334,7 @@ export default function AdvisorChat() {
                   className={cn(
                     "w-full flex items-center gap-3 p-3 rounded-2xl transition-all duration-200 group",
                     isSelected
-                      ? "bg-white shadow-md border border-slate-100" 
+                      ? "bg-white shadow-md border border-slate-100"
                       : "hover:bg-white/60"
                   )}
                 >
@@ -454,8 +454,8 @@ export default function AdvisorChat() {
                         )}>
                           <div className={cn(
                             "px-4 py-2.5 rounded-2xl shadow-sm relative",
-                            isMe 
-                              ? "bg-brand-500 text-white rounded-tr-none" 
+                            isMe
+                              ? "bg-brand-500 text-white rounded-tr-none"
                               : "bg-white border border-slate-100 text-slate-700 rounded-tl-none"
                           )}>
                             <p className="text-sm leading-relaxed">{msg.messageText}</p>
@@ -483,14 +483,14 @@ export default function AdvisorChat() {
                   <Paperclip size={20} />
                 </button>
                 <div className="flex-1 relative">
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder="Share your thoughts..." 
+                    placeholder="Share your thoughts..."
                     className="w-full pl-6 pr-12 py-3.5 bg-slate-50 border-transparent focus:bg-white focus:border-brand-200 rounded-2xl outline-none text-sm transition-all shadow-inner"
                   />
-                  <button 
+                  <button
                     type="submit"
                     disabled={!newMessage.trim()}
                     className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-brand-500 hover:bg-brand-50 disabled:opacity-30 disabled:hover:bg-transparent rounded-lg transition-all"

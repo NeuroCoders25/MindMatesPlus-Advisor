@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import {
   X, User, Heart, ClipboardList, AlertTriangle, Clock,
-  Mail, Calendar, Brain, Shield, Pill, Zap, Activity,
+  Mail, Calendar, Brain, Shield, Pill, Zap, Activity, MessageSquare,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
-import { doc, getDoc, collection, getDocs, query, orderBy } from 'firebase/firestore';
-import { RiskLevel, MentalHealthProfile, QuestionnaireResponse, UserDetails } from '../types';
+import { doc, getDoc } from 'firebase/firestore';
+import { RiskLevel, MentalHealthProfile, UserDetails } from '../types';
 import RiskBadge from './RiskBadge';
 import { cn } from '../lib/utils';
 
@@ -30,6 +30,7 @@ interface UserDetailsModalProps {
   userId: string;
   userName: string;
   riskLevel: RiskLevel;
+  onOpenChat?: () => void;
 }
 
 function parseMentalHealthProfile(
@@ -83,27 +84,12 @@ function parseUserDetails(
   };
 }
 
-function parseQuestionnaire(id: string, data: Record<string, unknown>): QuestionnaireResponse {
-  return {
-    id,
-    question: (data.question ?? data.questionText ?? data.q ?? 'Question') as string,
-    answer: (data.answer ?? data.response ?? data.value ?? '') as string | number,
-    score: data.score as number | undefined,
-    category: (data.category ?? data.type ?? data.section) as string | undefined,
-    timestamp: toDateString(data.timestamp ?? data.date ?? data.submittedAt),
-  };
-}
-
-type Tab = 'profile' | 'questionnaire';
-
 export default function UserDetailsModal({
-  isOpen, onClose, userId, userName, riskLevel,
+  isOpen, onClose, userId, userName, riskLevel, onOpenChat,
 }: UserDetailsModalProps) {
   const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
-  const [questionnaire, setQuestionnaire] = useState<QuestionnaireResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>('profile');
 
   useEffect(() => {
     if (!isOpen || !userId) return;
@@ -111,8 +97,6 @@ export default function UserDetailsModal({
     setLoading(true);
     setError(null);
     setUserDetails(null);
-    setQuestionnaire([]);
-    setActiveTab('profile');
 
     const fetchData = async () => {
       try {
@@ -125,30 +109,6 @@ export default function UserDetailsModal({
         const profileData = profileDoc?.exists() ? (profileDoc.data() as Record<string, unknown>) : undefined;
 
         setUserDetails(parseUserDetails(userId, { ...data, name: data.name ?? userName }, profileData));
-
-        // Check for questionnaire embedded in user doc
-        const embeddedQ =
-          (data.questionnaireResponses ?? data.questionnaire ?? data.surveys) as unknown[] | undefined;
-        if (Array.isArray(embeddedQ) && embeddedQ.length > 0) {
-          setQuestionnaire(
-            (embeddedQ as Record<string, unknown>[]).map((q, i) => parseQuestionnaire(String(i), q))
-          );
-        }
-
-        // Try questionnaire subcollections
-        const subCols = ['questionnaireResponses', 'questionnaire', 'surveys', 'responses', 'assessments'];
-        for (const sub of subCols) {
-          try {
-            const subRef = collection(db, 'users', userId, sub);
-            const snap = await getDocs(query(subRef, orderBy('timestamp', 'desc')));
-            if (!snap.empty) {
-              setQuestionnaire(snap.docs.map((d) => parseQuestionnaire(d.id, d.data() as Record<string, unknown>)));
-              break;
-            }
-          } catch {
-            // subcollection absent — try next
-          }
-        }
       } catch (err) {
         console.error('Error fetching user details:', err);
         setError('Could not load user details. Check Firestore permissions.');
@@ -209,24 +169,6 @@ export default function UserDetailsModal({
               </button>
             </div>
 
-            {/* Tabs */}
-            <div className="flex border-b border-slate-100 shrink-0">
-              {(['profile', 'questionnaire'] as Tab[]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={cn(
-                    'flex-1 py-3.5 text-sm font-bold transition-colors',
-                    activeTab === tab
-                      ? 'text-brand-600 border-b-2 border-brand-500'
-                      : 'text-slate-400 hover:text-slate-600'
-                  )}
-                >
-                  {tab === 'profile' ? 'Mental Health Profile' : 'Questionnaire Responses'}
-                </button>
-              ))}
-            </div>
-
             {/* Body */}
             <div className="flex-1 overflow-y-auto p-6">
               {loading ? (
@@ -239,12 +181,23 @@ export default function UserDetailsModal({
                 <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
                   {error}
                 </div>
-              ) : activeTab === 'profile' ? (
-                <ProfileTab userDetails={userDetails} userName={userName} riskLevel={riskLevel} />
               ) : (
-                <QuestionnaireTab responses={questionnaire} />
+                <ProfileTab userDetails={userDetails} userName={userName} riskLevel={riskLevel} />
               )}
             </div>
+
+            {/* Footer */}
+            {onOpenChat && (
+              <div className="p-4 border-t border-slate-100 shrink-0">
+                <button
+                  onClick={onOpenChat}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-brand-500 hover:bg-brand-600 text-white rounded-2xl font-bold transition-colors"
+                >
+                  <MessageSquare size={18} />
+                  Open Chat with {userName}
+                </button>
+              </div>
+            )}
           </motion.div>
         </div>
       )}
@@ -445,59 +398,6 @@ function ProfileTab({
   );
 }
 
-function QuestionnaireTab({ responses }: { responses: QuestionnaireResponse[] }) {
-  if (responses.length === 0) {
-    return (
-      <EmptyState
-        icon={<ClipboardList size={38} className="text-slate-300" />}
-        title="No questionnaire responses"
-        subtitle="Responses will appear once the user completes an assessment."
-      />
-    );
-  }
-
-  const categories = Array.from(new Set(responses.map((r) => r.category ?? 'General')));
-
-  return (
-    <div className="space-y-6">
-      {categories.map((cat) => (
-        <div key={cat}>
-          {categories.length > 1 && (
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">{cat}</p>
-          )}
-          <div className="space-y-3">
-            {responses
-              .filter((r) => (r.category ?? 'General') === cat)
-              .map((r) => (
-                <div key={r.id} className="bg-slate-50 rounded-xl p-4">
-                  <p className="text-sm font-semibold text-slate-700 mb-2">{r.question}</p>
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm text-slate-600">{String(r.answer)}</p>
-                    {r.score !== undefined && (
-                      <span
-                        className={cn(
-                          'text-xs font-bold px-2.5 py-0.5 rounded-full shrink-0',
-                          r.score <= 3 ? 'bg-red-50 text-red-600' :
-                          r.score <= 6 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
-                        )}
-                      >
-                        Score: {r.score}
-                      </span>
-                    )}
-                  </div>
-                  {r.timestamp && (
-                    <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1">
-                      <Clock size={9} /> {r.timestamp}
-                    </p>
-                  )}
-                </div>
-              ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function InfoTile({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
