@@ -32,8 +32,8 @@ import { User, Alert, RiskLevel } from '../types';
 
 function normalizeRiskLevel(value: unknown): RiskLevel {
   const v = String(value ?? '').toLowerCase().trim();
-  if (v === 'critical' || v === 'severe') return 'Critical';
-  if (v === 'high' || v === 'moderate') return 'High';
+  if (v.includes('extremely') || v.includes('severe') || v === 'critical') return 'Critical';
+  if (v.includes('high') || v.includes('moderate') || v === 'moderate') return 'High';
   if (v === 'medium' || v === 'mild') return 'Medium';
   return 'Low';
 }
@@ -107,8 +107,11 @@ function useDashboardData() {
             const data = d.data() as Record<string, unknown>;
             const profile = profileMap.get(d.id) ?? {};
 
+            const iqScore = profile.initialQuestionnaireScore as Record<string, unknown> | undefined;
             const rawRisk =
               profile.classificationLevel ??
+              profile.activeRecommendationCategory ??
+              iqScore?.category ??
               data.classificationLevel ??
               data.riskLevel ??
               data.risk_level ??

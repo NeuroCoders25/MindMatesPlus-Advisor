@@ -12,8 +12,8 @@ const RISK_ORDER: Record<RiskLevel, number> = { Critical: 0, High: 1, Medium: 2,
 
 function normalizeRiskLevel(value: unknown): RiskLevel {
   const v = String(value ?? '').toLowerCase().trim();
-  if (v === 'critical' || v === 'severe') return 'Critical';
-  if (v === 'high' || v === 'moderate') return 'High';
+  if (v.includes('extremely') || v.includes('severe') || v === 'critical') return 'Critical';
+  if (v.includes('high') || v.includes('moderate') || v === 'moderate') return 'High';
   if (v === 'medium' || v === 'mild') return 'Medium';
   return 'Low';
 }
@@ -55,8 +55,11 @@ function toTimestamp(value: unknown): number {
 }
 
 function parseUser(id: string, data: Record<string, unknown>, profile: Record<string, unknown>): User {
+  const iqScore = profile.initialQuestionnaireScore as Record<string, unknown> | undefined;
   const rawRisk =
     profile.classificationLevel ??
+    profile.activeRecommendationCategory ??
+    iqScore?.category ??
     data.classificationLevel ??
     data.riskLevel ??
     data.risk_level ??

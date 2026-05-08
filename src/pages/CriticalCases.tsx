@@ -25,8 +25,8 @@ function toDateString(value: unknown): string {
 
 function normalizeRiskLevel(value: unknown): Case['riskLevel'] {
   const v = String(value ?? '').toLowerCase().trim();
-  if (v === 'critical' || v === 'severe') return 'Critical';
-  if (v === 'high' || v === 'moderate') return 'High';
+  if (v.includes('extremely') || v.includes('severe') || v === 'critical') return 'Critical';
+  if (v.includes('high') || v.includes('moderate') || v === 'moderate') return 'High';
   if (v === 'medium' || v === 'mild') return 'Medium';
   return 'Low';
 }
@@ -100,9 +100,15 @@ export default function CriticalCases() {
         const fetched = snap.docs.map((d) => {
           const userData = d.data() as Record<string, unknown>;
           const profileData = profileMap.get(d.id) ?? {};
-          // classificationLevel from the subcollection takes priority over any field on the user doc
           const merged: Record<string, unknown> = { ...userData };
-          if (profileData.classificationLevel) merged.classificationLevel = profileData.classificationLevel;
+          if (profileData.classificationLevel) {
+            merged.classificationLevel = profileData.classificationLevel;
+          } else if (profileData.activeRecommendationCategory) {
+            merged.classificationLevel = profileData.activeRecommendationCategory;
+          } else {
+            const iqScore = profileData.initialQuestionnaireScore as Record<string, unknown> | undefined;
+            if (iqScore?.category) merged.classificationLevel = iqScore.category;
+          }
           return parseCase(d.id, merged);
         });
 
