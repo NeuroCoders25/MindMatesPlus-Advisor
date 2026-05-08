@@ -97,6 +97,24 @@ export interface UserDetails {
   mentalHealthProfile?: MentalHealthProfile;
 }
 
+export interface AdvisorConnection {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  advisorId: string;
+  advisorName?: string;
+  status: 'pending' | 'accepted' | 'reviewed' | 'approved';
+  caseType: string;
+  reason: string;
+  userMentalHealthCategory: string;
+  approvedCategory?: string;
+  advisorNote?: string;
+  createdAt: unknown;
+  updatedAt?: unknown;
+  approvedAt?: unknown;
+}
+
 export interface PeerGroup {
   id: string;
   name: string;
@@ -104,6 +122,17 @@ export interface PeerGroup {
   createdAt?: string;
   status?: string;
   category?: string;
+}
+
+export interface CaseMessage {
+  id: string;
+  senderId: string;
+  senderRole: 'user' | 'advisor';
+  receiverId: string;
+  messageText: string;
+  messageType: string;
+  createdAt: unknown;
+  isRead: boolean;
 }
 
 export interface LiveChatMessage {

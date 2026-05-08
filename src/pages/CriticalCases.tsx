@@ -1,13 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AlertTriangle, Search, PlusCircle } from 'lucide-react';
+import { AlertTriangle, Search, PlusCircle, Users, UserCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 import CaseCard from '../components/CaseCard';
+import ConnectionCard from '../components/ConnectionCard';
 import NotesModal from '../components/NotesModal';
 import UserDetailsModal from '../components/UserDetailsModal';
 import DirectChatModal from '../components/DirectChatModal';
-import { Case } from '../types';
+import CaseDetailsModal from '../components/CaseDetailsModal';
+import { Case, AdvisorConnection } from '../types';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, getDoc, doc } from 'firebase/firestore';
+import { useAuth } from '../context/AuthContext';
+import {
+  listenToCriticalCases,
+  acceptAdvisorConnection,
+  markCaseReviewed,
+} from '../lib/advisorConnections';
 
 function toDateString(value: unknown): string {
   if (value === null || value === undefined) return '—';
@@ -58,6 +66,18 @@ const HIGH_RISK: Case['riskLevel'][] = ['Critical', 'High'];
 const RISK_ORDER: Record<Case['riskLevel'], number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
 
 export default function CriticalCases() {
+  const { currentUser } = useAuth();
+
+  // Advisor connections state
+  const [connections, setConnections] = useState<AdvisorConnection[]>([]);
+  const [connectionsLoading, setConnectionsLoading] = useState(true);
+  const [connectionsError, setConnectionsError] = useState<string | null>(null);
+  const [connSearch, setConnSearch] = useState('');
+  const [connStatusFilter, setConnStatusFilter] = useState<'All' | 'pending' | 'accepted'>('All');
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [isCaseDetailsOpen, setIsCaseDetailsOpen] = useState(false);
+
+  // AI-flagged cases state (existing)
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,23 +91,42 @@ export default function CriticalCases() {
   const [riskFilter, setRiskFilter] = useState<'All' | 'Critical' | 'High'>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Open' | 'Escalated' | 'Resolved'>('All');
 
-  // Track whether the `cases` collection has already provided data so
-  // the `users` fallback listener doesn't overwrite it.
   const casesHasData = useRef(false);
 
+  // Advisor connections real-time listener
+  useEffect(() => {
+    if (!currentUser) {
+      setConnectionsLoading(false);
+      return;
+    }
+
+    setConnectionsLoading(true);
+    const unsub = listenToCriticalCases(
+      currentUser.uid,
+      (conns) => {
+        setConnections(conns);
+        setConnectionsLoading(false);
+        setConnectionsError(null);
+      },
+      () => {
+        setConnectionsError('Could not load connection requests. Check Firestore permissions.');
+        setConnectionsLoading(false);
+      }
+    );
+
+    return unsub;
+  }, [currentUser]);
+
+  // AI-flagged cases listener (existing logic)
   useEffect(() => {
     setLoading(true);
     casesHasData.current = false;
 
-    // Primary: real-time listener on all users, filter Critical/High client-side.
-    // For each user we also fetch their mentalHealthProfile/currentProfile subcollection
-    // document to read the classificationLevel written by the onboarding questionnaire.
     const unsubUsers = onSnapshot(
       collection(db, 'users'),
       async (snap) => {
         if (casesHasData.current) return;
 
-        // Batch-fetch mental health profiles so we get classificationLevel
         const profileResults = await Promise.all(
           snap.docs.map((d) =>
             getDoc(doc(db, 'users', d.id, 'mentalHealthProfile', 'currentProfile'))
@@ -127,7 +166,6 @@ export default function CriticalCases() {
       }
     );
 
-    // Secondary: if a `cases` collection exists, it takes priority over users.
     const unsubCases = onSnapshot(
       collection(db, 'cases'),
       (snap) => {
@@ -146,7 +184,7 @@ export default function CriticalCases() {
           setError(null);
         }
       },
-      () => {} // cases collection absent — silently ignore
+      () => {}
     );
 
     return () => {
@@ -154,6 +192,19 @@ export default function CriticalCases() {
       unsubCases();
     };
   }, []);
+
+  const filteredConnections = connections
+    .filter((c) =>
+      connSearch === '' ||
+      c.userName.toLowerCase().includes(connSearch.toLowerCase()) ||
+      c.userEmail.toLowerCase().includes(connSearch.toLowerCase())
+    )
+    .filter((c) => connStatusFilter === 'All' || c.status === connStatusFilter)
+    .sort((a, b) => {
+      const aTs = (a.createdAt as { seconds?: number })?.seconds ?? 0;
+      const bTs = (b.createdAt as { seconds?: number })?.seconds ?? 0;
+      return bTs - aTs;
+    });
 
   const filteredCases = cases
     .filter(
@@ -165,6 +216,27 @@ export default function CriticalCases() {
     .filter((c) => riskFilter === 'All' || c.riskLevel === riskFilter)
     .filter((c) => statusFilter === 'All' || c.status === statusFilter)
     .sort((a, b) => RISK_ORDER[a.riskLevel] - RISK_ORDER[b.riskLevel]);
+
+  // Close the case details modal if the connection is removed from the active list (e.g. after review)
+  useEffect(() => {
+    if (isCaseDetailsOpen && selectedConnectionId && !connections.find((c) => c.id === selectedConnectionId)) {
+      setIsCaseDetailsOpen(false);
+    }
+  }, [connections, selectedConnectionId, isCaseDetailsOpen]);
+
+  async function handleAccept(conn: AdvisorConnection) {
+    if (!currentUser) return;
+    await acceptAdvisorConnection(conn.id, conn.userId, currentUser.uid);
+  }
+
+  async function handleMarkReviewed(conn: AdvisorConnection) {
+    await markCaseReviewed(conn.id, conn.userId);
+  }
+
+  function handleOpenCaseDetails(conn: AdvisorConnection) {
+    setSelectedConnectionId(conn.id);
+    setIsCaseDetailsOpen(true);
+  }
 
   const handleViewDetails = (c: Case) => {
     setSelectedCase(c);
@@ -193,7 +265,7 @@ export default function CriticalCases() {
             <AlertTriangle className="text-red-500" size={32} />
             Critical Cases
           </h1>
-          <p className="text-slate-500 mt-1">AI-flagged high-risk users requiring immediate advisor review.</p>
+          <p className="text-slate-500 mt-1">High-risk users requiring immediate advisor review.</p>
         </div>
         <button className="px-6 py-3 bg-brand-500 text-white rounded-2xl font-bold shadow-lg shadow-brand-200 hover:bg-brand-600 transition-all flex items-center gap-2 self-start">
           <PlusCircle size={20} />
@@ -201,77 +273,166 @@ export default function CriticalCases() {
         </button>
       </header>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
-          {error}
+      {/* ── Advisor Connection Requests ── */}
+      <section className="space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <UserCheck size={20} className="text-brand-500" />
+            <h2 className="text-xl font-bold text-slate-800">Connection Requests</h2>
+            {connections.length > 0 && (
+              <span className="text-xs font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
+                {connections.length}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+              <input
+                type="text"
+                value={connSearch}
+                onChange={(e) => setConnSearch(e.target.value)}
+                placeholder="Search by name or email…"
+                className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 focus:bg-white focus:border-brand-300 rounded-xl outline-none text-sm transition-all w-52"
+              />
+            </div>
+            <select
+              value={connStatusFilter}
+              onChange={(e) => setConnStatusFilter(e.target.value as typeof connStatusFilter)}
+              className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-semibold outline-none border-none hover:bg-slate-200 transition-colors"
+            >
+              <option value="All">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="accepted">Accepted</option>
+            </select>
+          </div>
         </div>
-      )}
 
-      {/* Filters */}
-      <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded-2xl border border-slate-200">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter by name or case ID..."
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border-transparent focus:bg-white focus:border-brand-300 rounded-xl outline-none text-sm transition-all"
-          />
-        </div>
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <select
-            value={riskFilter}
-            onChange={(e) => setRiskFilter(e.target.value as typeof riskFilter)}
-            className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-semibold outline-none border-none hover:bg-slate-200 transition-colors"
-          >
-            <option value="All">All Risk Levels</option>
-            <option value="Critical">Critical</option>
-            <option value="High">High</option>
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-            className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-semibold outline-none border-none hover:bg-slate-200 transition-colors"
-          >
-            <option value="All">All Statuses</option>
-            <option value="Open">Open</option>
-            <option value="Escalated">Escalated</option>
-            <option value="Resolved">Resolved</option>
-          </select>
-        </div>
+        {connectionsError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+            {connectionsError}
+          </div>
+        )}
+
+        {!currentUser ? (
+          <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-200">
+            <Users size={36} className="mx-auto mb-3 text-slate-300" />
+            <p className="text-slate-500 font-medium">Sign in to view your connection requests.</p>
+          </div>
+        ) : connectionsLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-52 rounded-2xl bg-slate-100 animate-pulse" />
+            ))}
+          </div>
+        ) : filteredConnections.length === 0 ? (
+          <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-200">
+            <UserCheck size={36} className="mx-auto mb-3 text-slate-300" />
+            <p className="text-slate-500 font-medium">
+              {connections.length === 0
+                ? 'No critical case connection requests yet.'
+                : 'No requests match the current filters.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredConnections.map((conn) => (
+              <ConnectionCard
+                key={conn.id}
+                connection={conn}
+                onAccept={handleAccept}
+                onMarkReviewed={handleMarkReviewed}
+                onClick={handleOpenCaseDetails}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ── Divider ── */}
+      <div className="flex items-center gap-4">
+        <div className="flex-1 h-px bg-slate-200" />
+        <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">AI-Flagged Cases</span>
+        <div className="flex-1 h-px bg-slate-200" />
       </div>
 
-      {/* Case grid */}
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-48 rounded-2xl bg-slate-100 animate-pulse" />
-          ))}
+      {/* ── AI-Flagged Cases (existing) ── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2 mb-2">
+          <AlertTriangle size={18} className="text-amber-500" />
+          <h2 className="text-xl font-bold text-slate-800">AI-Flagged High-Risk Users</h2>
         </div>
-      ) : filteredCases.length === 0 ? (
-        <div className="text-center py-16">
-          <AlertTriangle size={48} className="mx-auto mb-4 text-slate-300" />
-          <p className="text-lg font-semibold text-slate-500">No critical cases found</p>
-          <p className="text-sm text-slate-400 mt-1">
-            {cases.length === 0
-              ? 'No high-risk users in the database yet.'
-              : 'No users match the current filters.'}
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCases.map((c) => (
-            <CaseCard
-              key={c.id}
-              caseData={c}
-              onViewDetails={() => handleViewDetails(c)}
-              onAddNote={() => handleAddNote(c)}
-              onOpenChat={() => handleOpenChat(c)}
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+            {error}
+          </div>
+        )}
+
+        <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded-2xl border border-slate-200">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filter by name or case ID..."
+              className="w-full pl-10 pr-4 py-2 bg-slate-50 border-transparent focus:bg-white focus:border-brand-300 rounded-xl outline-none text-sm transition-all"
             />
-          ))}
+          </div>
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <select
+              value={riskFilter}
+              onChange={(e) => setRiskFilter(e.target.value as typeof riskFilter)}
+              className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-semibold outline-none border-none hover:bg-slate-200 transition-colors"
+            >
+              <option value="All">All Risk Levels</option>
+              <option value="Critical">Critical</option>
+              <option value="High">High</option>
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-semibold outline-none border-none hover:bg-slate-200 transition-colors"
+            >
+              <option value="All">All Statuses</option>
+              <option value="Open">Open</option>
+              <option value="Escalated">Escalated</option>
+              <option value="Resolved">Resolved</option>
+            </select>
+          </div>
         </div>
-      )}
+
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-48 rounded-2xl bg-slate-100 animate-pulse" />
+            ))}
+          </div>
+        ) : filteredCases.length === 0 ? (
+          <div className="text-center py-16">
+            <AlertTriangle size={48} className="mx-auto mb-4 text-slate-300" />
+            <p className="text-lg font-semibold text-slate-500">No AI-flagged cases found</p>
+            <p className="text-sm text-slate-400 mt-1">
+              {cases.length === 0
+                ? 'No high-risk users in the database yet.'
+                : 'No users match the current filters.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredCases.map((c) => (
+              <CaseCard
+                key={c.id}
+                caseData={c}
+                onViewDetails={() => handleViewDetails(c)}
+                onAddNote={() => handleAddNote(c)}
+                onOpenChat={() => handleOpenChat(c)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Protocol reminder */}
       <div className="bg-brand-50 rounded-3xl p-8 border border-brand-100 flex flex-col md:flex-row items-center gap-8">
@@ -290,6 +451,17 @@ export default function CriticalCases() {
           View Protocol
         </button>
       </div>
+
+      {isCaseDetailsOpen && selectedConnectionId && (() => {
+        const conn = connections.find((c) => c.id === selectedConnectionId);
+        return conn ? (
+          <CaseDetailsModal
+            isOpen={isCaseDetailsOpen}
+            onClose={() => setIsCaseDetailsOpen(false)}
+            connection={conn}
+          />
+        ) : null;
+      })()}
 
       <NotesModal
         isOpen={isNotesModalOpen}
