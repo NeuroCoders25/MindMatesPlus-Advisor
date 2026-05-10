@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
+import FlaggedMessageAlert from './components/FlaggedMessageAlert';
 
 // Auth pages
 import Login from './pages/Login';
@@ -48,6 +49,8 @@ function ProtectedLayout() {
           </div>
         </main>
       </div>
+      {/* Global flagged-message toast alerts — monitors group chat, AI chat & journals */}
+      <FlaggedMessageAlert />
     </div>
   );
 }

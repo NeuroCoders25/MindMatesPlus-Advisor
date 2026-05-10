@@ -32,6 +32,7 @@ function parseMessage(id: string, data: Record<string, unknown>): LiveChatMessag
     senderName: (data.senderName as string) ?? (data.userName as string) ?? 'Unknown',
     text: (data.text as string) ?? (data.message as string) ?? (data.content as string) ?? '',
     timestamp: toDate(data.timestamp ?? data.createdAt ?? data.sentAt),
+    isFlagged: Boolean(data.isFlagged ?? data.flagged ?? data.is_flagged ?? false),
   };
 }
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { LiveChatMessage } from '../types';
 import { cn } from '../lib/utils';
+import { AlertTriangle } from 'lucide-react';
 
 interface ChatViewerProps {
   messages: LiveChatMessage[];
@@ -35,10 +36,16 @@ export default function ChatViewer({ messages, currentUserId }: ChatViewerProps)
             key={msg.id}
             className={cn(
               'flex flex-col max-w-[80%]',
-              isSelf ? 'self-end items-end' : 'self-start items-start'
+              isSelf ? 'self-end items-end' : 'self-start items-start',
             )}
           >
             <div className="flex items-center gap-2 mb-1">
+              {msg.isFlagged && (
+                <span className="flex items-center gap-0.5 text-[10px] font-bold text-red-500 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-md">
+                  <AlertTriangle size={9} />
+                  Flagged
+                </span>
+              )}
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                 {msg.senderName}
               </span>
@@ -48,9 +55,11 @@ export default function ChatViewer({ messages, currentUserId }: ChatViewerProps)
             <div
               className={cn(
                 'px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm',
-                isSelf
-                  ? 'bg-brand-500 text-white rounded-tr-none'
-                  : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none'
+                msg.isFlagged
+                  ? 'bg-red-50 border border-red-300 text-red-900'
+                  : isSelf
+                    ? 'bg-brand-500 text-white rounded-tr-none'
+                    : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none',
               )}
             >
               {msg.text}
