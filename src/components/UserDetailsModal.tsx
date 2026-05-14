@@ -72,7 +72,7 @@ function parseUserDetails(
 ): UserDetails {
   return {
     id,
-    name: (data.name ?? data.displayName ?? data.userName ?? data.fullName) as string ?? 'Unknown',
+    name: (data.nickName ?? data.nickname ?? data.anonymousName) as string ?? 'Anonymous',
     email: data.email as string | undefined,
     age: data.age as number | undefined,
     gender: data.gender as string | undefined,
@@ -108,7 +108,7 @@ export default function UserDetailsModal({
         const data = userDoc.exists() ? (userDoc.data() as Record<string, unknown>) : {};
         const profileData = profileDoc?.exists() ? (profileDoc.data() as Record<string, unknown>) : undefined;
 
-        setUserDetails(parseUserDetails(userId, { ...data, name: data.name ?? userName }, profileData));
+        setUserDetails(parseUserDetails(userId, data, profileData));
       } catch (err) {
         console.error('Error fetching user details:', err);
         setError('Could not load user details. Check Firestore permissions.');

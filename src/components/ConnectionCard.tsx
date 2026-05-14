@@ -60,10 +60,10 @@ export default function ConnectionCard({ connection, onAccept, onMarkReviewed, o
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-2xl bg-red-50 flex items-center justify-center text-red-600 font-bold text-lg shrink-0">
-            {connection.userName.charAt(0).toUpperCase()}
+            {(connection.nickName || connection.userName).charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <h4 className="font-bold text-slate-800 leading-tight truncate">{connection.userName}</h4>
+            <h4 className="font-bold text-slate-800 leading-tight truncate">{connection.nickName || connection.userName}</h4>
             <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
               <Mail size={11} className="shrink-0" />
               <span className="truncate">{connection.userEmail}</span>

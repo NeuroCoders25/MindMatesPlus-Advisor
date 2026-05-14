@@ -196,7 +196,7 @@ export default function CriticalCases() {
   const filteredConnections = connections
     .filter((c) =>
       connSearch === '' ||
-      c.userName.toLowerCase().includes(connSearch.toLowerCase()) ||
+      (c.nickName ?? c.userName).toLowerCase().includes(connSearch.toLowerCase()) ||
       c.userEmail.toLowerCase().includes(connSearch.toLowerCase())
     )
     .filter((c) => connStatusFilter === 'All' || c.status === connStatusFilter)

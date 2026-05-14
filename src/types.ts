@@ -102,6 +102,7 @@ export interface AdvisorConnection {
   userId: string;
   userName: string;
   userEmail: string;
+  nickName?: string;
   advisorId: string;
   advisorName?: string;
   status: 'pending' | 'accepted' | 'reviewed' | 'approved';
@@ -141,16 +142,6 @@ export interface LiveChatMessage {
   senderName: string;
   text: string;
   timestamp: Date | null;
-  isFlagged?: boolean;
-}
-
-export interface FlaggedAlert {
-  id: string;
-  source: 'group-chat' | 'ai-chat' | 'journal';
-  senderName: string;
-  snippet: string;
-  timestamp: Date;
-  navPath: string;
 }
 
 export interface Resource {

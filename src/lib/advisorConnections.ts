@@ -30,7 +30,14 @@ export async function updateUserMentalHealthAfterApproval(
   advisorId: string,
   selectedApprovedCategory: string
 ): Promise<void> {
-  await updateDoc(doc(db, 'users', userId, 'mentalHealthProfile', 'currentProfile'), {
+  console.log('[AdvisorApproval] Updating user profile to normal');
+
+  const profileRef = doc(db, 'users', userId, 'mentalHealthProfile', 'currentProfile');
+  const snap = await getDoc(profileRef);
+  const currentScore = snap.exists() ? (snap.data()?.wellnessScore as number | undefined) : undefined;
+  const safeWellnessScore = Math.max(typeof currentScore === 'number' ? currentScore : 0, 20);
+
+  await updateDoc(profileRef, {
     userStatus: 'normal',
     advisorConnectionStatus: 'approved',
     approvedByAdvisorId: advisorId,
@@ -38,11 +45,55 @@ export async function updateUserMentalHealthAfterApproval(
     baselineRecommendationCategory: selectedApprovedCategory,
     activeRecommendationCategory: selectedApprovedCategory,
     peerGroupRecommendationCategory: selectedApprovedCategory,
+    dashboardCategory: selectedApprovedCategory,
     resourceRecommendationCategory: selectedApprovedCategory,
     recommendationSource: 'advisor_approval',
+    approvalMessageSeen: false,
     advisorApprovedAt: serverTimestamp(),
     lastUpdated: serverTimestamp(),
+    wellnessScore: safeWellnessScore,
   });
+
+  console.log('[AdvisorApproval] approvalMessageSeen set to false');
+}
+
+export async function updateUserWellnessScoreByAdvisor(
+  userId: string,
+  advisorId: string,
+  newScore: number,
+  previousScore: number | null,
+  note?: string
+): Promise<void> {
+  const profileRef = doc(db, 'users', userId, 'mentalHealthProfile', 'currentProfile');
+
+  const profileUpdate: Record<string, unknown> = {
+    wellnessScore: newScore,
+    wellnessScoreUpdatedBy: advisorId,
+    wellnessScoreUpdatedByRole: 'advisor',
+    wellnessScoreUpdatedAt: serverTimestamp(),
+    recommendationSource: 'advisor_update',
+    lastUpdated: serverTimestamp(),
+  };
+
+  if (newScore < 10) {
+    profileUpdate.userStatus = 'restricted';
+    profileUpdate.restrictedReason = 'Low wellness score confirmed by advisor';
+  }
+
+  await updateDoc(profileRef, profileUpdate);
+
+  const historyEntry: Record<string, unknown> = {
+    previousScore,
+    newScore,
+    source: 'advisor_update',
+    updatedBy: advisorId,
+    updatedByRole: 'advisor',
+    createdAt: serverTimestamp(),
+  };
+  if (previousScore !== null) historyEntry.changeAmount = newScore - previousScore;
+  if (note) historyEntry.note = note;
+
+  await addDoc(collection(db, 'users', userId, 'wellnessScoreHistory'), historyEntry);
 }
 
 export async function approveUserForNormalAccess(
@@ -52,15 +103,21 @@ export async function approveUserForNormalAccess(
   selectedApprovedCategory: string,
   advisorNote?: string
 ): Promise<void> {
+  console.log('[AdvisorApproval] Approve clicked');
+  console.log('[AdvisorApproval] Updating advisorConnections status to approved');
+
   await updateDoc(doc(db, 'advisorConnections', connectionId), {
     status: 'approved',
     approvedAt: serverTimestamp(),
     approvedBy: advisorId,
     approvedCategory: selectedApprovedCategory,
-    ...(advisorNote ? { advisorNote } : {}),
+    advisorNote: advisorNote || '',
     updatedAt: serverTimestamp(),
   });
+
   await updateUserMentalHealthAfterApproval(userId, advisorId, selectedApprovedCategory);
+
+  console.log('[AdvisorApproval] Approval update completed');
 }
 
 export function listenToCriticalCases(
@@ -76,7 +133,7 @@ export function listenToCriticalCases(
 
   return onSnapshot(
     q,
-    (snap) => {
+    async (snap) => {
       const all = snap.docs.map((d) => ({
         id: d.id,
         ...(d.data() as Omit<AdvisorConnection, 'id'>),
@@ -95,7 +152,24 @@ export function listenToCriticalCases(
         }
       }
 
-      onUpdate(Array.from(byUser.values()));
+      const deduped = Array.from(byUser.values());
+
+      // Fetch nickname from users collection for each connection
+      const enriched = await Promise.all(
+        deduped.map(async (conn) => {
+          try {
+            const userSnap = await getDoc(doc(db, 'users', conn.userId));
+            const nickname = userSnap.exists()
+              ? (userSnap.data()?.nickname as string | undefined)
+              : undefined;
+            return { ...conn, nickName: nickname || conn.nickName };
+          } catch {
+            return conn;
+          }
+        })
+      );
+
+      onUpdate(enriched);
     },
     (err) => onError?.(err as Error)
   );
