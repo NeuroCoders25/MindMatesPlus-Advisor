@@ -14,6 +14,7 @@ export interface AdvisorProfile {
   name: string;
   role: string;
   email: string;
+  profileImageUrl?: string;
 }
 
 interface AuthContextType {
@@ -24,6 +25,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  updateAdvisorProfile: (updates: Partial<AdvisorProfile>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -60,6 +62,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return signOut(auth);
   }
 
+  function updateAdvisorProfile(updates: Partial<AdvisorProfile>) {
+    setAdvisorProfile((prev) => (prev ? { ...prev, ...updates } : prev));
+  }
+
   function resetPassword(email: string) {
     return sendPasswordResetEmail(auth, email);
   }
@@ -72,7 +78,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const snap = await getDoc(doc(db, 'advisors', user.uid));
           if (snap.exists()) {
             const data = snap.data();
-            setAdvisorProfile({ name: data.name, role: data.role, email: data.email });
+            setAdvisorProfile({
+              name: data.name,
+              role: data.role,
+              email: data.email,
+              profileImageUrl: data.profileImageUrl,
+            });
           }
         } catch {
           // profile fetch failed silently
@@ -86,7 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ currentUser, advisorProfile, loading, signup, login, logout, resetPassword }}>
+    <AuthContext.Provider value={{ currentUser, advisorProfile, loading, signup, login, logout, resetPassword, updateAdvisorProfile }}>
       {children}
     </AuthContext.Provider>
   );

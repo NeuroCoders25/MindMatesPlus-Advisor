@@ -21,7 +21,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { db, storage } from '../lib/firebase';
 import { collection, addDoc, getDocs, query, orderBy, serverTimestamp, Timestamp, deleteDoc, doc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, deleteObject } from 'firebase/storage';
+import { uploadImageToImageKit } from '../services/imageUploadService';
 import { useAuth } from '../context/AuthContext';
 import { Resource } from '../types';
 
@@ -44,6 +45,7 @@ export default function Resources() {
   const [filterType, setFilterType] = useState<'all' | 'text' | 'image'>('image');
   const [isLoading, setIsLoading] = useState(true);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   
   // New Resource Form State
@@ -153,11 +155,11 @@ export default function Resources() {
       setIsPublishing(true);
       let imageUrl = editingResource?.image_url || '';
 
-      // Upload new image if provided
+      // Upload new image to ImageKit if provided
       if (newResource.type === 'image' && newResource.image) {
-        const imageRef = ref(storage, `resource_images/${Date.now()}_${newResource.image.name}`);
-        const uploadResult = await uploadBytes(imageRef, newResource.image);
-        imageUrl = await getDownloadURL(uploadResult.ref);
+        setIsUploading(true);
+        imageUrl = await uploadImageToImageKit(newResource.image, 'resources');
+        setIsUploading(false);
       }
 
       const resourceData = {
@@ -207,6 +209,7 @@ export default function Resources() {
       console.error("Error saving resource:", error);
       alert("Failed to save resource. Please try again.");
     } finally {
+      setIsUploading(false);
       setIsPublishing(false);
     }
   };
@@ -555,10 +558,15 @@ export default function Resources() {
                   </button>
                   <button
                     type="submit"
-                    disabled={isPublishing}
+                    disabled={isPublishing || isUploading}
                     className="flex-[2] px-6 py-4 bg-brand-600 hover:bg-brand-700 disabled:bg-brand-400 text-white font-bold rounded-2xl shadow-lg shadow-brand-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                   >
-                    {isPublishing ? (
+                    {isUploading ? (
+                      <>
+                        <Loader2 size={20} className="animate-spin" />
+                        Uploading...
+                      </>
+                    ) : isPublishing ? (
                       <>
                         <Loader2 size={20} className="animate-spin" />
                         {editingResource ? 'Saving Changes...' : 'Publishing...'}
