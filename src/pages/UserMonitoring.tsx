@@ -71,7 +71,7 @@ function parseUser(id: string, data: Record<string, unknown>, profile: Record<st
   const rawActivity = data.lastActivity ?? data.last_active ?? data.lastSeen ?? data.updatedAt;
   return {
     id,
-    name: (data.name ?? data.displayName ?? data.userName ?? data.fullName ?? 'Unknown') as string,
+    name: (data.nickname ?? data.nickName ?? data.name ?? data.displayName ?? data.userName ?? data.fullName ?? 'Unknown') as string,
     riskLevel,
     status: normalizeStatus(rawStatus),
     lastActivity: toRelativeTime(rawActivity),

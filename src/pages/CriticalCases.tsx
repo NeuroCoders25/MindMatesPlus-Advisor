@@ -54,7 +54,7 @@ function parseCase(id: string, data: Record<string, unknown>): Case {
   return {
     id,
     userId: (data.userId ?? data.uid ?? data.user_id ?? id) as string,
-    userName: (data.userName ?? data.name ?? data.displayName ?? data.fullName ?? 'Unknown') as string,
+    userName: (data.nickname ?? data.nickName ?? data.userName ?? data.name ?? data.displayName ?? data.fullName ?? 'Unknown') as string,
     riskLevel: normalizeRiskLevel(rawRisk),
     lastActivity: toDateString(data.lastActivity ?? data.last_active ?? data.lastSeen ?? data.updatedAt),
     reason: (data.reason ?? data.flagReason ?? data.description ?? data.aiFlag ?? data.notes ?? 'Risk detected') as string,

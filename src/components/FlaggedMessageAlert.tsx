@@ -49,7 +49,9 @@ function isFlaggedDoc(data: Record<string, unknown>): boolean {
 
 function getSenderName(data: Record<string, unknown>): string {
   return String(
-    data.senderName ??
+    data.nickname ??
+      data.nickName ??
+      data.senderName ??
       data.sender_name ??
       data.userName ??
       data.user_name ??

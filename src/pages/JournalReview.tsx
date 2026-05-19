@@ -94,7 +94,7 @@ export default function JournalReview() {
         snap.docs.forEach(d => {
           const data = d.data() as Record<string, unknown>;
           const name = String(
-            data.name ?? data.displayName ?? data.fullName ?? data.userName ?? 'Unknown',
+            data.nickname ?? data.nickName ?? data.name ?? data.displayName ?? data.fullName ?? data.userName ?? 'Unknown',
           );
           map.set(d.id, name);
         });
@@ -131,7 +131,7 @@ export default function JournalReview() {
             const fetched = snap.docs.map(d => {
               const data = d.data() as Record<string, unknown>;
               const userId = resolveUserId(data, d.ref.path);
-              const userName = userMap.get(userId) ?? String(data.userName ?? data.name ?? 'Unknown');
+              const userName = userMap.get(userId) ?? String(data.nickname ?? data.nickName ?? data.userName ?? data.name ?? 'Unknown');
               return parseJournal(d.id, userId, userName, data);
             });
             setJournals(fetched);
@@ -146,7 +146,7 @@ export default function JournalReview() {
               const fetched = snap.docs.map(d => {
                 const data = d.data() as Record<string, unknown>;
                 const userId = resolveUserId(data, d.ref.path);
-                const userName = userMap.get(userId) ?? String(data.userName ?? data.name ?? 'Unknown');
+                const userName = userMap.get(userId) ?? String(data.nickname ?? data.nickName ?? data.userName ?? data.name ?? 'Unknown');
                 return parseJournal(d.id, userId, userName, data);
               });
               fetched.sort((a, b) => b.date.localeCompare(a.date));
@@ -166,7 +166,7 @@ export default function JournalReview() {
         const fetched = snap.docs.map(d => {
           const data = d.data() as Record<string, unknown>;
           const userId = String(data.userId ?? data.user_id ?? '');
-          const userName = userMap.get(userId) ?? String(data.userName ?? data.name ?? 'Unknown');
+          const userName = userMap.get(userId) ?? String(data.nickname ?? data.nickName ?? data.userName ?? data.name ?? 'Unknown');
           return parseJournal(d.id, userId, userName, data);
         });
         fetched.sort((a, b) => b.date.localeCompare(a.date));

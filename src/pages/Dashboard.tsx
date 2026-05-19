@@ -133,7 +133,7 @@ function useDashboardData() {
 
             return {
               id: d.id,
-              name: (data.name ?? data.displayName ?? data.userName ?? data.fullName ?? 'Unknown') as string,
+              name: (data.nickname ?? data.nickName ?? data.name ?? data.displayName ?? data.userName ?? data.fullName ?? 'Unknown') as string,
               riskLevel,
               status: normalizeStatus(rawStatus),
               lastActivity: toRelativeTime(rawActivity),
