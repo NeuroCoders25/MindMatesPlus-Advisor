@@ -97,6 +97,25 @@ export interface UserDetails {
   mentalHealthProfile?: MentalHealthProfile;
 }
 
+export interface AdvisorConnection {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  nickName?: string;
+  advisorId: string;
+  advisorName?: string;
+  status: 'pending' | 'accepted' | 'reviewed' | 'approved';
+  caseType: string;
+  reason: string;
+  userMentalHealthCategory: string;
+  approvedCategory?: string;
+  advisorNote?: string;
+  createdAt: unknown;
+  updatedAt?: unknown;
+  approvedAt?: unknown;
+}
+
 export interface PeerGroup {
   id: string;
   name: string;
@@ -106,10 +125,59 @@ export interface PeerGroup {
   category?: string;
 }
 
+export interface CaseMessage {
+  id: string;
+  senderId: string;
+  senderRole: 'user' | 'advisor';
+  receiverId: string;
+  messageText: string;
+  messageType: string;
+  createdAt: unknown;
+  isRead: boolean;
+}
+
 export interface LiveChatMessage {
   id: string;
   senderId: string;
   senderName: string;
   text: string;
   timestamp: Date | null;
+  isFlagged?: boolean;
+  advisorApproved?: boolean;
+  advisorNote?: string;
+  deletedByAdvisor?: boolean;
+  deletedByAdvisorName?: string;
+  reviewStatus?: 'pending' | 'approved' | 'rejected' | 'not_required';
+  reviewedBy?: string;
+  reviewedAt?: Date | null;
+  rejectionReason?: string | null;
+}
+
+export interface AdvisorPrivateMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole: 'advisor' | 'user';
+  receiverId?: string;
+  receiverName?: string;
+  text: string;
+  /** Primary timestamp field for privateThread messages. */
+  createdAt: Date | null;
+  isRead: boolean;
+  isPrivate?: boolean;
+  threadType?: string;
+  flaggedMessageRef?: string;
+  visibleTo?: string[];
+}
+
+export interface Resource {
+  id: string;
+  title: string;
+  category: string;
+  resource_type: 'text' | 'image';
+  resource: string; // text content
+  image_url?: string; // image URL if applicable
+  author: string;
+  authorId: string;
+  createdAt: string;
 }

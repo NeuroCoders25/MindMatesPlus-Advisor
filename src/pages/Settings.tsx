@@ -1,7 +1,10 @@
-import React from 'react';
-import { Settings as SettingsIcon, Bell, Shield, User, Globe, Moon, Save } from 'lucide-react';
-import { motion } from 'motion/react';
+import React, { useRef, useState } from 'react';
+import { Settings as SettingsIcon, Bell, Shield, User, Globe, Moon, Save, Upload, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { uploadImageToImageKit } from '../services/imageUploadService';
 
 function getInitials(name: string) {
   return name
@@ -13,19 +16,92 @@ function getInitials(name: string) {
 }
 
 export default function Settings() {
-  const { advisorProfile } = useAuth();
-  
+  const { advisorProfile, currentUser, updateAdvisorProfile } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [photoError, setPhotoError] = useState('');
+  const [toast, setToast] = useState<{ type: 'success' | 'discard'; message: string } | null>(null);
+
+  function showToast(type: 'success' | 'discard', message: string) {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 3000);
+  }
+
   const name = advisorProfile?.name ?? 'Advisor';
   const role = advisorProfile?.role ?? '';
   const email = advisorProfile?.email ?? '';
   const initials = getInitials(name);
+  const originalImageUrl = advisorProfile?.profileImageUrl;
+  // Show local object URL while a new file is staged; fall back to saved URL
+  const previewImageUrl = localPreviewUrl ?? originalImageUrl;
+
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoError('');
+    // Revoke any previous local preview to avoid memory leaks
+    if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+    setSelectedImageFile(file);
+    setLocalPreviewUrl(URL.createObjectURL(file));
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  async function handleSave() {
+    if (selectedImageFile && currentUser) {
+      setIsUploading(true);
+      try {
+        const url = await uploadImageToImageKit(selectedImageFile, 'advisors');
+        await updateDoc(doc(db, 'advisors', currentUser.uid), { profileImageUrl: url });
+        updateAdvisorProfile({ profileImageUrl: url });
+        // Clean up local preview
+        if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+        setSelectedImageFile(null);
+        setLocalPreviewUrl(null);
+      } catch (err) {
+        console.error('Profile photo upload failed:', err);
+        setPhotoError('Upload failed. Please try again.');
+        setIsUploading(false);
+        return;
+      }
+      setIsUploading(false);
+    }
+    showToast('success', 'Settings saved successfully');
+  }
+
+  function handleDiscard() {
+    if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+    setSelectedImageFile(null);
+    setLocalPreviewUrl(null);
+    setPhotoError('');
+    showToast('discard', 'Changes discarded');
+  }
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       className="space-y-8 max-w-4xl"
     >
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            key="toast"
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl font-semibold text-sm ${
+              toast.type === 'success'
+                ? 'bg-green-500 text-white'
+                : 'bg-slate-600 text-white'
+            }`}
+          >
+            {toast.type === 'success' ? <CheckCircle size={18} /> : <XCircle size={18} />}
+            {toast.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
       <header>
         <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
           <SettingsIcon className="text-brand-500" size={32} />
@@ -60,12 +136,43 @@ export default function Settings() {
             <h3 className="text-lg font-bold text-slate-800 mb-6">Advisor Profile</h3>
             <div className="space-y-6">
               <div className="flex items-center gap-6">
-                <div className="w-20 h-20 rounded-3xl bg-brand-100 flex items-center justify-center text-brand-600 text-3xl font-bold border-4 border-white shadow-lg">
-                  {initials}
+                <div className="relative w-20 h-20 shrink-0">
+                  {previewImageUrl ? (
+                    <img
+                      src={previewImageUrl}
+                      alt={name}
+                      className="w-20 h-20 rounded-3xl object-cover border-4 border-white shadow-lg"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-3xl bg-brand-100 flex items-center justify-center text-brand-600 text-3xl font-bold border-4 border-white shadow-lg">
+                      {initials}
+                    </div>
+                  )}
+                  {isUploading && (
+                    <div className="absolute inset-0 rounded-3xl bg-black/40 flex items-center justify-center">
+                      <Loader2 size={24} className="text-white animate-spin" />
+                    </div>
+                  )}
                 </div>
-                <button className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors">
-                  Change Photo
-                </button>
+                <div className="flex flex-col gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePhotoChange}
+                  />
+                  <button
+                    type="button"
+                    disabled={isUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 disabled:opacity-50 transition-colors flex items-center gap-2"
+                  >
+                    <Upload size={14} />
+                    Change Photo
+                  </button>
+                  {photoError && <p className="text-xs text-red-500">{photoError}</p>}
+                </div>
               </div>
               
               <div className="grid grid-cols-2 gap-4">
@@ -109,10 +216,19 @@ export default function Settings() {
           </div>
           
           <div className="flex items-center justify-end gap-3">
-            <button className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors">Discard Changes</button>
-            <button className="px-8 py-3 bg-brand-500 text-white rounded-2xl font-bold shadow-lg shadow-brand-200 hover:bg-brand-600 transition-all flex items-center gap-2">
-              <Save size={20} />
-              Save Settings
+            <button
+              onClick={handleDiscard}
+              className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              Discard Changes
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isUploading}
+              className="px-8 py-3 bg-brand-500 text-white rounded-2xl font-bold shadow-lg shadow-brand-200 hover:bg-brand-600 disabled:opacity-50 transition-all flex items-center gap-2"
+            >
+              {isUploading ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
+              {isUploading ? 'Saving...' : 'Save Settings'}
             </button>
           </div>
         </div>

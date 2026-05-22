@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Search, 
@@ -14,21 +14,17 @@ import {
   CheckCircle2,
   Calendar,
   User,
-  ChevronDown
+  ChevronDown,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-
-interface Resource {
-  id: string;
-  title: string;
-  type: 'text' | 'image';
-  content: string;
-  imageUrl?: string;
-  author: string;
-  date: string;
-  category: string;
-}
+import { db, storage } from '../lib/firebase';
+import { collection, addDoc, getDocs, query, orderBy, serverTimestamp, Timestamp, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { ref, deleteObject } from 'firebase/storage';
+import { uploadImageToImageKit } from '../services/imageUploadService';
+import { useAuth } from '../context/AuthContext';
+import { Resource } from '../types';
 
 const CATEGORIES = [
   'Wellness - Thriving',
@@ -39,42 +35,18 @@ const CATEGORIES = [
   'Moderate Support'
 ];
 
-const mockResources: Resource[] = [
-  {
-    id: '1',
-    title: 'Managing Anxiety in Daily Life',
-    type: 'text',
-    content: 'Anxiety is a normal part of life, but it can become overwhelming...',
-    author: 'Dr. Sarah Smith',
-    date: '2024-05-10',
-    category: 'Wellness - Stress Aware'
-  },
-  {
-    id: '2',
-    title: 'Morning Meditation Routine',
-    type: 'image',
-    content: 'A visual guide to starting your day with mindfulness.',
-    imageUrl: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&q=80&w=800',
-    author: 'James Wilson',
-    date: '2024-05-08',
-    category: 'Wellness - Thriving'
-  },
-  {
-    id: '3',
-    title: 'Cognitive Behavioral Therapy Basics',
-    type: 'text',
-    content: 'CBT is a common type of talk therapy (psychotherapy)...',
-    author: 'Dr. Emily Brown',
-    date: '2024-05-05',
-    category: 'Mild Support'
-  }
-];
-
 export default function Resources() {
-  const [resources, setResources] = useState<Resource[]>(mockResources);
+  const { advisorProfile, currentUser } = useAuth();
+  const [resources, setResources] = useState<Resource[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingResource, setEditingResource] = useState<Resource | null>(null);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'text' | 'image'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'text' | 'image'>('image');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
   
   // New Resource Form State
   const [newResource, setNewResource] = useState({
@@ -86,10 +58,37 @@ export default function Resources() {
     imagePreview: ''
   });
 
+  useEffect(() => {
+    fetchResources();
+  }, []);
+
+  const fetchResources = async () => {
+    try {
+      setIsLoading(true);
+      const q = query(collection(db, 'resources'), orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      const fetchedResources: Resource[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        fetchedResources.push({
+          id: doc.id,
+          ...data,
+          // Ensure createdAt is a string for the interface
+          createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString().split('T')[0] : data.createdAt
+        } as Resource);
+      });
+      setResources(fetchedResources);
+    } catch (error) {
+      console.error("Error fetching resources:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const filteredResources = resources.filter(res => {
     const matchesSearch = res.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                          res.category.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesType = filterType === 'all' || res.type === filterType;
+    const matchesType = filterType === 'all' || res.resource_type === filterType;
     return matchesSearch && matchesType;
   });
 
@@ -104,21 +103,115 @@ export default function Resources() {
     }
   };
 
-  const handleAddResource = (e: React.FormEvent) => {
+  const handleDeleteResource = async (resource: Resource) => {
+    if (!window.confirm('Are you sure you want to delete this resource?')) return;
+
+    try {
+      setIsDeleting(resource.id);
+      
+      // Delete from Firestore
+      await deleteDoc(doc(db, 'resources', resource.id));
+
+      // Delete from Storage if it's an image
+      if (resource.resource_type === 'image' && resource.image_url) {
+        try {
+          const imageRef = ref(storage, resource.image_url);
+          await deleteObject(imageRef);
+        } catch (storageError) {
+          console.error("Error deleting image from storage:", storageError);
+          // Continue even if storage delete fails
+        }
+      }
+
+      setResources(prev => prev.filter(r => r.id !== resource.id));
+    } catch (error) {
+      console.error("Error deleting resource:", error);
+      alert("Failed to delete resource.");
+    } finally {
+      setIsDeleting(null);
+      setActiveMenuId(null);
+    }
+  };
+
+  const openEditModal = (resource: Resource) => {
+    setEditingResource(resource);
+    setNewResource({
+      title: resource.title,
+      type: resource.resource_type,
+      content: resource.resource,
+      category: resource.category,
+      image: null,
+      imagePreview: resource.image_url || ''
+    });
+    setIsModalOpen(true);
+    setActiveMenuId(null);
+  };
+
+  const handleAddResource = async (e: React.FormEvent) => {
     e.preventDefault();
-    const resource: Resource = {
-      id: Math.random().toString(36).substr(2, 9),
-      title: newResource.title,
-      type: newResource.type,
-      content: newResource.content,
-      imageUrl: newResource.imagePreview || undefined,
-      author: 'Current Advisor', // Should come from context
-      date: new Date().toISOString().split('T')[0],
-      category: newResource.category
-    };
-    setResources([resource, ...resources]);
-    setIsModalOpen(false);
-    setNewResource({ title: '', type: 'text', content: '', category: CATEGORIES[0], image: null, imagePreview: '' });
+    if (!currentUser || !advisorProfile) return;
+
+    try {
+      setIsPublishing(true);
+      let imageUrl = editingResource?.image_url || '';
+
+      // Upload new image to ImageKit if provided
+      if (newResource.type === 'image' && newResource.image) {
+        setIsUploading(true);
+        imageUrl = await uploadImageToImageKit(newResource.image, 'resources');
+        setIsUploading(false);
+      }
+
+      const resourceData = {
+        title: newResource.title,
+        category: newResource.category,
+        resource_type: newResource.type,
+        resource: newResource.content,
+        author: advisorProfile.name,
+        authorId: currentUser.uid,
+        ...(newResource.type === 'image' ? { image_url: imageUrl || "" } : {})
+      };
+
+      if (editingResource) {
+        // Update existing
+        await updateDoc(doc(db, 'resources', editingResource.id), {
+          ...resourceData,
+          updatedAt: serverTimestamp()
+        });
+        
+        setResources(prev => prev.map(r => r.id === editingResource.id ? { 
+          ...r, 
+          ...resourceData,
+          image_url: newResource.type === 'image' ? imageUrl : undefined
+        } as Resource : r));
+      } else {
+        // Create new
+        const resourceWithTimestamp = {
+          ...resourceData,
+          createdAt: serverTimestamp()
+        };
+        const docRef = await addDoc(collection(db, 'resources'), resourceWithTimestamp);
+        
+        const newResourceItem: Resource = {
+          id: docRef.id,
+          ...resourceData,
+          createdAt: new Date().toISOString().split('T')[0],
+          image_url: newResource.type === 'image' ? imageUrl : undefined
+        } as Resource;
+
+        setResources([newResourceItem, ...resources]);
+      }
+
+      setIsModalOpen(false);
+      setEditingResource(null);
+      setNewResource({ title: '', type: 'text', content: '', category: CATEGORIES[0], image: null, imagePreview: '' });
+    } catch (error) {
+      console.error("Error saving resource:", error);
+      alert("Failed to save resource. Please try again.");
+    } finally {
+      setIsUploading(false);
+      setIsPublishing(false);
+    }
   };
 
   return (
@@ -130,7 +223,11 @@ export default function Resources() {
           <p className="text-slate-500 mt-1">Manage and share educational content with your users.</p>
         </div>
         <button 
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            setEditingResource(null);
+            setNewResource({ title: '', type: 'text', content: '', category: CATEGORIES[0], image: null, imagePreview: '' });
+            setIsModalOpen(true);
+          }}
           className="flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-6 py-3 rounded-2xl font-semibold shadow-lg shadow-brand-200 transition-all active:scale-95"
         >
           <Plus size={20} />
@@ -169,77 +266,126 @@ export default function Resources() {
       </div>
 
       {/* Resource Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <AnimatePresence mode="popLayout">
-          {filteredResources.map((resource) => (
-            <motion.div
-              layout
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              key={resource.id}
-              className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 flex flex-col"
-            >
-              {resource.type === 'image' && resource.imageUrl && (
-                <div className="relative h-48 overflow-hidden">
-                  <img 
-                    src={resource.imageUrl} 
-                    alt={resource.title}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                  />
-                  <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-bold text-brand-600 uppercase tracking-wider">
-                    Image Post
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <Loader2 className="w-12 h-12 text-brand-600 animate-spin" />
+          <p className="text-slate-500 font-medium">Loading resources...</p>
+        </div>
+      ) : filteredResources.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 bg-white rounded-[3rem] border border-slate-100 shadow-sm">
+          <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-4">
+            <Search size={40} />
+          </div>
+          <h3 className="text-xl font-bold text-slate-800">No resources found</h3>
+          <p className="text-slate-500">Try adjusting your search or filters</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <AnimatePresence mode="popLayout">
+            {filteredResources.map((resource) => (
+              <motion.div
+                layout
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                key={resource.id}
+                className="group bg-white rounded-[2rem] border border-slate-100 overflow-hidden hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 flex flex-col"
+              >
+                {resource.resource_type === 'image' && resource.image_url && (
+                  <div className="relative h-48 overflow-hidden">
+                    <img 
+                      src={resource.image_url} 
+                      alt={resource.title}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    />
+                    <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-bold text-brand-600 uppercase tracking-wider">
+                      Image Post
+                    </div>
                   </div>
-                </div>
-              )}
-              
-              <div className="p-6 flex-1 flex flex-col">
-                <div className="flex items-start justify-between mb-4">
-                  <div className={cn(
-                    "p-2 rounded-xl",
-                    resource.type === 'text' ? "bg-blue-50 text-blue-600" : "bg-purple-50 text-purple-600"
-                  )}>
-                    {resource.type === 'text' ? <Type size={18} /> : <ImageIcon size={18} />}
-                  </div>
-                  <button className="text-slate-400 hover:text-slate-600 p-1">
-                    <MoreVertical size={18} />
-                  </button>
-                </div>
-
-                <h3 className="text-lg font-bold text-slate-800 mb-2 group-hover:text-brand-600 transition-colors">
-                  {resource.title}
-                </h3>
+                )}
                 
-                <p className="text-slate-500 text-sm line-clamp-3 mb-6 flex-1">
-                  {resource.content}
-                </p>
-
-                <div className="mb-6">
-                  <span className="px-3 py-1 bg-brand-50 text-brand-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                    {resource.category}
-                  </span>
-                </div>
-
-                <div className="pt-6 border-t border-slate-50 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-[10px]">
-                      {resource.author.split(' ').map(n => n[0]).join('')}
+                <div className="p-6 flex-1 flex flex-col">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className={cn(
+                      "p-2 rounded-xl",
+                      resource.resource_type === 'text' ? "bg-blue-50 text-blue-600" : "bg-purple-50 text-purple-600"
+                    )}>
+                      {resource.resource_type === 'text' ? <Type size={18} /> : <ImageIcon size={18} />}
                     </div>
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-800">{resource.author}</p>
-                      <p className="text-[10px] text-slate-400">{resource.date}</p>
+                    <div className="relative">
+                      <button 
+                        onClick={() => setActiveMenuId(activeMenuId === resource.id ? null : resource.id)}
+                        className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-50 transition-colors"
+                      >
+                        {isDeleting === resource.id ? (
+                          <Loader2 size={18} className="animate-spin" />
+                        ) : (
+                          <MoreVertical size={18} />
+                        )}
+                      </button>
+                      
+                      {activeMenuId === resource.id && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-10" 
+                            onClick={() => setActiveMenuId(null)}
+                          />
+                          <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-20 animate-in fade-in zoom-in duration-200">
+                            <button 
+                              onClick={() => openEditModal(resource)}
+                              className="w-full px-4 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-3 transition-colors"
+                            >
+                              <Edit3 size={16} className="text-blue-500" />
+                              Edit Resource
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteResource(resource)}
+                              className="w-full px-4 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50 flex items-center gap-3 transition-colors"
+                            >
+                              <Trash2 size={16} />
+                              Delete Resource
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <button className="text-brand-600 hover:text-brand-700 font-bold text-xs flex items-center gap-1 transition-colors">
-                    View
-                    <ExternalLink size={12} />
-                  </button>
+
+                  <h3 className="text-lg font-bold text-slate-800 mb-2 group-hover:text-brand-600 transition-colors">
+                    {resource.title}
+                  </h3>
+                  
+                  <p className="text-slate-500 text-sm line-clamp-3 mb-6 flex-1">
+                    {resource.resource}
+                  </p>
+
+                  <div className="mb-6">
+                    <span className="px-3 py-1 bg-brand-50 text-brand-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                      {resource.category}
+                    </span>
+                  </div>
+
+                  <div className="pt-6 border-t border-slate-50 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-[10px]">
+                        {resource.author.split(' ').map(n => n[0]).join('')}
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-800">{resource.author}</p>
+                        <p className="text-[10px] text-slate-400">{resource.createdAt}</p>
+                      </div>
+                    </div>
+                    <button className="text-brand-600 hover:text-brand-700 font-bold text-xs flex items-center gap-1 transition-colors">
+                      View
+                      <ExternalLink size={12} />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
 
       {/* Add Resource Modal */}
       <AnimatePresence>
@@ -260,8 +406,12 @@ export default function Resources() {
             >
               <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
                 <div>
-                  <h2 className="text-2xl font-bold text-slate-900">Create New Resource</h2>
-                  <p className="text-slate-500 text-sm mt-1">Fill in the details to publish a new post.</p>
+                  <h2 className="text-2xl font-bold text-slate-900">
+                    {editingResource ? 'Edit Resource' : 'Create New Resource'}
+                  </h2>
+                  <p className="text-slate-500 text-sm mt-1">
+                    {editingResource ? 'Update the details of your resource.' : 'Fill in the details to publish a new post.'}
+                  </p>
                 </div>
                 <button 
                   onClick={() => setIsModalOpen(false)}
@@ -408,10 +558,25 @@ export default function Resources() {
                   </button>
                   <button
                     type="submit"
-                    className="flex-[2] px-6 py-4 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-2xl shadow-lg shadow-brand-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                    disabled={isPublishing || isUploading}
+                    className="flex-[2] px-6 py-4 bg-brand-600 hover:bg-brand-700 disabled:bg-brand-400 text-white font-bold rounded-2xl shadow-lg shadow-brand-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                   >
-                    <CheckCircle2 size={20} />
-                    Publish Resource
+                    {isUploading ? (
+                      <>
+                        <Loader2 size={20} className="animate-spin" />
+                        Uploading...
+                      </>
+                    ) : isPublishing ? (
+                      <>
+                        <Loader2 size={20} className="animate-spin" />
+                        {editingResource ? 'Saving Changes...' : 'Publishing...'}
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={20} />
+                        {editingResource ? 'Save Changes' : 'Publish Resource'}
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

@@ -27,7 +27,7 @@ const navItems = [
   { icon: Library, label: 'Resources', path: '/resources' },
   { icon: BarChart3, label: 'AI Insights', path: '/insights' },
   { icon: FileText, label: 'Reports', path: '/reports' },
-  { icon: StickyNote, label: 'Advisor Notes', path: '/notes' },
+  { icon: MessageSquare, label: 'Admin Chats', path: '/chat' },
   { icon: Settings, label: 'Settings', path: '/settings' },
 ];
 
@@ -49,6 +49,7 @@ export default function Sidebar() {
   const name = advisorProfile?.name ?? 'Advisor';
   const role = advisorProfile?.role ?? '';
   const initials = getInitials(name);
+  const profileImageUrl = advisorProfile?.profileImageUrl;
 
   async function handleSignOut() {
     await logout();
@@ -108,10 +109,16 @@ export default function Sidebar() {
           onClick={() => setMenuOpen((v) => !v)}
           className="w-full text-left bg-slate-50 hover:bg-slate-100 rounded-2xl p-4 transition-colors"
         >
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Advisor</p>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Admin Mode</p>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-brand-100 border-2 border-white shadow-sm flex items-center justify-center text-brand-600 font-bold text-sm flex-shrink-0">
-              {initials}
+            <div className="w-10 h-10 rounded-full border-2 border-white shadow-sm shrink-0 overflow-hidden">
+              {profileImageUrl ? (
+                <img src={profileImageUrl} alt={name} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-sm">
+                  {initials}
+                </div>
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-slate-800 truncate">{name}</p>

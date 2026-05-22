@@ -1,16 +1,16 @@
 import React from 'react';
 import { Case } from '../types';
 import RiskBadge from './RiskBadge';
-import { Clock, AlertCircle, ChevronRight, StickyNote } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { Clock, AlertCircle, ChevronRight, StickyNote, MessageSquare } from 'lucide-react';
 
 interface CaseCardProps {
   caseData: Case;
   onViewDetails?: () => void;
   onAddNote?: () => void;
+  onOpenChat?: () => void;
 }
 
-export default function CaseCard({ caseData, onViewDetails, onAddNote }: CaseCardProps) {
+export default function CaseCard({ caseData, onViewDetails, onAddNote, onOpenChat }: CaseCardProps) {
   return (
     <div className="glass-card p-5 hover:shadow-md transition-all border-l-4 border-l-transparent hover:border-l-brand-500">
       <div className="flex items-start justify-between mb-4">
@@ -38,13 +38,15 @@ export default function CaseCard({ caseData, onViewDetails, onAddNote }: CaseCar
 
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className={cn(
-            'text-xs font-bold px-2 py-1 rounded-lg uppercase tracking-wider',
-            caseData.status === 'Open' ? 'bg-brand-50 text-brand-600' :
-            caseData.status === 'Escalated' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
-          )}>
-            {caseData.status}
-          </span>
+          {onOpenChat && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onOpenChat(); }}
+              className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl transition-colors"
+            >
+              <MessageSquare size={14} />
+              Open Chat
+            </button>
+          )}
           {onAddNote && (
             <button
               onClick={(e) => { e.stopPropagation(); onAddNote(); }}
@@ -55,12 +57,14 @@ export default function CaseCard({ caseData, onViewDetails, onAddNote }: CaseCar
             </button>
           )}
         </div>
-        <button
-          onClick={(e) => { e.stopPropagation(); onViewDetails?.(); }}
-          className="flex items-center gap-1 text-sm font-semibold text-brand-600 hover:translate-x-1 transition-transform"
-        >
-          View Details <ChevronRight size={16} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => { e.stopPropagation(); onViewDetails?.(); }}
+            className="flex items-center gap-1 text-sm font-semibold text-brand-600 hover:translate-x-1 transition-transform"
+          >
+            View Details <ChevronRight size={16} />
+          </button>
+        </div>
       </div>
     </div>
   );
