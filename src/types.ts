@@ -142,6 +142,25 @@ export interface LiveChatMessage {
   senderName: string;
   text: string;
   timestamp: Date | null;
+  isFlagged?: boolean;
+  advisorApproved?: boolean;
+  advisorNote?: string;
+  deletedByAdvisor?: boolean;
+  deletedByAdvisorName?: string;
+  reviewStatus?: 'pending' | 'approved' | 'rejected' | 'not_required';
+  reviewedBy?: string;
+  reviewedAt?: Date | null;
+  rejectionReason?: string | null;
+}
+
+export interface AdvisorPrivateMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole: 'advisor' | 'user';
+  text: string;
+  createdAt: Date | null;
+  isRead: boolean;
 }
 
 export interface Resource {
