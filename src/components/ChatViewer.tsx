@@ -35,6 +35,8 @@ export default function ChatViewer({ messages, currentUserId, selectedFlaggedMsg
         const isSelf = currentUserId && msg.senderId === currentUserId;
         const isSelected = selectedFlaggedMsgId === msg.id;
         const isDeleted = Boolean(msg.deletedByAdvisor);
+        const effectiveStatus = msg.reviewStatus ?? (msg.advisorApproved ? 'approved' : 'pending');
+        const isApproved = msg.isFlagged && effectiveStatus === 'approved';
 
         return (
           <div
@@ -48,7 +50,8 @@ export default function ChatViewer({ messages, currentUserId, selectedFlaggedMsg
             onClick={() => !isDeleted && msg.isFlagged && onFlaggedMessageClick?.(msg)}
           >
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              {!isDeleted && msg.isFlagged && (
+              {/* Only show "Flagged" badge for messages that have NOT been approved */}
+              {!isDeleted && msg.isFlagged && !isApproved && (
                 <span className="flex items-center gap-0.5 text-[10px] font-bold text-red-500 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-md">
                   <AlertTriangle size={9} />
                   Flagged
@@ -93,15 +96,15 @@ export default function ChatViewer({ messages, currentUserId, selectedFlaggedMsg
             </div>
 
             {isDeleted ? (
-              <div className="px-4 py-2.5 rounded-2xl text-xs italic text-slate-400 bg-slate-100 border border-dashed border-slate-200 flex items-center gap-1.5">
-                <Trash2 size={11} className="shrink-0" />
-                This message was deleted by the advisor
+              <div className="px-4 py-2.5 rounded-2xl text-xs italic text-slate-400 bg-slate-100 border border-dashed border-slate-200 flex items-center gap-1.5 select-none">
+                🗑 This message was deleted by the advisor.
               </div>
             ) : (
               <div
                 className={cn(
                   'px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm',
-                  msg.isFlagged
+                  // Approved flagged messages render as normal messages (no red styling)
+                  msg.isFlagged && !isApproved
                     ? isSelected
                       ? 'bg-red-100 border-2 border-red-400 text-red-900'
                       : 'bg-red-50 border border-red-300 text-red-900 hover:bg-red-100 transition-colors'
@@ -114,9 +117,14 @@ export default function ChatViewer({ messages, currentUserId, selectedFlaggedMsg
               </div>
             )}
 
-            {!isDeleted && msg.isFlagged && onFlaggedMessageClick && (
+            {!isDeleted && msg.isFlagged && !isApproved && onFlaggedMessageClick && (
               <p className="text-[9px] text-slate-400 mt-0.5">
                 {isSelected ? 'Selected · click to deselect' : 'Click to review'}
+              </p>
+            )}
+            {!isDeleted && isApproved && onFlaggedMessageClick && (
+              <p className="text-[9px] text-emerald-400 mt-0.5">
+                {isSelected ? 'Selected · click to deselect' : 'Approved · click to view details'}
               </p>
             )}
           </div>

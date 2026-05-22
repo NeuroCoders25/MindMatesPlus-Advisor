@@ -19,14 +19,12 @@ import {
   doc,
   updateDoc,
   addDoc,
-  setDoc,
-  getDoc,
   serverTimestamp,
 } from 'firebase/firestore';
 
 const GROUPS_COLLECTION = 'peer_groups';
 const MESSAGES_SUBCOLLECTION = 'chatMessages';
-const PRIVATE_CHATS_COLLECTION = 'advisorGroupPrivateChats';
+const PRIVATE_THREAD_SUBCOLLECTION = 'privateThread';
 
 function toDate(value: unknown): Date | null {
   if (!value) return null;
@@ -206,23 +204,31 @@ export default function ChatReview() {
     return () => unsubscribe();
   }, [selectedGroup?.id]);
 
-  // Private messages listener for the flagged message panel
+  // Private messages listener for the flagged message panel.
+  // Path: peer_groups/{groupId}/chatMessages/{flaggedMessageId}/privateThread
+  // Only the advisor and the flagged-message sender can see these (enforced via visibleTo).
   useEffect(() => {
     if (!selectedFlaggedMsg || !selectedGroup || !currentUser) {
       setPrivateMessages([]);
       return;
     }
 
-    const chatId = `${selectedGroup.id}_${selectedFlaggedMsg.senderId}_${currentUser.uid}`;
     const q = query(
-      collection(db, PRIVATE_CHATS_COLLECTION, chatId, 'messages'),
-      orderBy('createdAt', 'asc')
+      collection(
+        db,
+        GROUPS_COLLECTION, selectedGroup.id,
+        MESSAGES_SUBCOLLECTION, selectedFlaggedMsg.id,
+        PRIVATE_THREAD_SUBCOLLECTION,
+      ),
+      orderBy('timestamp', 'asc'),
     );
 
     const unsubscribe = onSnapshot(q, (snap) => {
-      setPrivateMessages(snap.docs.map(d => parsePrivateMessage(d.id, d.data() as Record<string, unknown>)));
+      setPrivateMessages(
+        snap.docs.map(d => parsePrivateMessage(d.id, d.data() as Record<string, unknown>))
+      );
     }, (err) => {
-      console.error('Error fetching private messages:', err);
+      console.error('Error fetching private thread:', err);
     });
 
     return () => unsubscribe();
@@ -296,42 +302,36 @@ export default function ChatReview() {
     }
   };
 
+  // Sends a private message from the advisor to the flagged-message author.
+  // Stored under: peer_groups/{groupId}/chatMessages/{flaggedMessageId}/privateThread
+  // Does NOT touch the main chatMessages collection or broadcast to group listeners.
   const handleSendPrivateReply = async () => {
     if (!replyText.trim() || !selectedFlaggedMsg || !selectedGroup || !currentUser) return;
     setReplySending(true);
     try {
-      const chatId = `${selectedGroup.id}_${selectedFlaggedMsg.senderId}_${currentUser.uid}`;
-      const chatRef = doc(db, PRIVATE_CHATS_COLLECTION, chatId);
-      const chatSnap = await getDoc(chatRef);
+      const privateThreadRef = collection(
+        db,
+        GROUPS_COLLECTION, selectedGroup.id,
+        MESSAGES_SUBCOLLECTION, selectedFlaggedMsg.id,
+        PRIVATE_THREAD_SUBCOLLECTION,
+      );
 
-      if (!chatSnap.exists()) {
-        await setDoc(chatRef, {
-          groupId: selectedGroup.id,
-          groupName: selectedGroup.name,
-          userId: selectedFlaggedMsg.senderId,
-          userName: selectedFlaggedMsg.senderName,
-          advisorId: currentUser.uid,
-          advisorName: advisorProfile?.name ?? 'Advisor',
-          flaggedMessageId: selectedFlaggedMsg.id,
-          flaggedMessageText: selectedFlaggedMsg.text,
-          createdAt: serverTimestamp(),
-          lastMessage: replyText.trim(),
-          lastMessageAt: serverTimestamp(),
-        });
-      } else {
-        await updateDoc(chatRef, {
-          lastMessage: replyText.trim(),
-          lastMessageAt: serverTimestamp(),
-        });
-      }
-
-      await addDoc(collection(db, PRIVATE_CHATS_COLLECTION, chatId, 'messages'), {
-        senderId: currentUser.uid,
+      await addDoc(privateThreadRef, {
+        // Sender — always the advisor here
+        senderId:   currentUser.uid,
         senderName: advisorProfile?.name ?? 'Advisor',
         senderRole: 'advisor',
-        text: replyText.trim(),
-        createdAt: serverTimestamp(),
-        isRead: false,
+        // Recipient — the user who sent the flagged message
+        receiverId:   selectedFlaggedMsg.senderId,
+        receiverName: selectedFlaggedMsg.senderName,
+        // Content
+        text:      replyText.trim(),
+        timestamp: serverTimestamp(),
+        // Thread metadata
+        isPrivate:          true,
+        threadType:         'advisor_private_reply',
+        flaggedMessageRef:  selectedFlaggedMsg.id,
+        visibleTo: [currentUser.uid, selectedFlaggedMsg.senderId],
       });
 
       setReplyText('');
@@ -382,6 +382,9 @@ export default function ChatReview() {
   };
 
   const visibleMessages = messages.filter(msg => {
+    // Deleted messages are always shown so the "deleted by advisor" placeholder
+    // is visible to everyone in the thread, regardless of the review filter.
+    if (msg.deletedByAdvisor) return true;
     if (!msg.isFlagged) return true;
     if (reviewFilter === 'all') return true;
     const status = msg.reviewStatus ?? (msg.advisorApproved ? 'approved' : 'pending');
@@ -780,22 +783,46 @@ export default function ChatReview() {
               {/* Private chat tab */}
               {panelTab === 'chat' && (
                 <div className="flex-1 flex flex-col overflow-hidden">
-                  <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 shrink-0">
-                    <p className="text-[10px] text-amber-700 flex items-center gap-1">
-                      <Lock size={9} />
-                      Only you and <span className="font-bold mx-0.5">{selectedFlaggedMsg.senderName}</span> can see these messages
+
+                  {/* Privacy notice */}
+                  <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 shrink-0 flex items-center gap-1.5">
+                    <Lock size={9} className="text-amber-600 shrink-0" />
+                    <p className="text-[10px] text-amber-700">
+                      Only you and{' '}
+                      <span className="font-bold">{selectedFlaggedMsg.senderName}</span>{' '}
+                      can see these messages.
                     </p>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/50">
+                  {/* Flagged message context reference */}
+                  <div className="mx-3 mt-3 mb-1 shrink-0 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <AlertTriangle size={10} className="text-red-500 shrink-0" />
+                      <span className="text-[10px] font-bold text-red-600 uppercase tracking-wide">Flagged message · context</span>
+                    </div>
+                    <p className="text-xs text-red-800 font-medium leading-snug line-clamp-3">
+                      "{selectedFlaggedMsg.text}"
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <span className="text-[10px] text-red-500">
+                        — <span className="font-semibold">{selectedFlaggedMsg.senderName}</span>
+                        {selectedFlaggedMsg.timestamp && (
+                          <span className="text-red-400 ml-1">· {formatTime(selectedFlaggedMsg.timestamp)}</span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Message thread */}
+                  <div className="flex-1 overflow-y-auto px-3 pb-3 pt-2 space-y-3 bg-slate-50/50">
                     {privateMessages.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs gap-2 py-8">
+                      <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs gap-2 py-6">
                         <div className="w-12 h-12 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center">
                           <MessageSquare size={20} className="text-brand-400" />
                         </div>
-                        <p className="text-center">
-                          Send a private message to <br />
-                          <span className="font-bold text-slate-600">{selectedFlaggedMsg.senderName}</span>
+                        <p className="text-center text-slate-500 text-[11px] font-medium">
+                          Start a private conversation with<br />
+                          <span className="font-bold text-slate-700">{selectedFlaggedMsg.senderName}</span>
                         </p>
                         <p className="text-[10px] text-slate-300 text-center">
                           Other group members won't see this
@@ -805,12 +832,15 @@ export default function ChatReview() {
                       privateMessages.map((msg) => {
                         const isMe = msg.senderRole === 'advisor';
                         return (
-                          <div key={msg.id} className={cn('flex', isMe ? 'justify-end' : 'justify-start')}>
+                          <div key={msg.id} className={cn('flex flex-col gap-0.5', isMe ? 'items-end' : 'items-start')}>
+                            <span className="text-[9px] font-semibold text-slate-400 px-1">
+                              {isMe ? (advisorProfile?.name ?? 'You') : msg.senderName}
+                            </span>
                             <div className={cn(
                               'max-w-[85%] px-3 py-2 rounded-2xl text-xs shadow-sm',
                               isMe
-                                ? 'bg-brand-500 text-white rounded-tr-none'
-                                : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none'
+                                ? 'bg-brand-500 text-white rounded-tr-sm'
+                                : 'bg-white border border-slate-200 text-slate-700 rounded-tl-sm'
                             )}>
                               <p className="leading-relaxed">{msg.text}</p>
                               <p className={cn(
@@ -827,6 +857,7 @@ export default function ChatReview() {
                     <div ref={privateMsgsEndRef} />
                   </div>
 
+                  {/* Input area */}
                   <div className="p-3 border-t border-slate-100 bg-white shrink-0">
                     <div className="flex gap-2 items-center">
                       <input
@@ -839,7 +870,7 @@ export default function ChatReview() {
                             handleSendPrivateReply();
                           }
                         }}
-                        placeholder={`Message ${selectedFlaggedMsg.senderName}...`}
+                        placeholder={`Message ${selectedFlaggedMsg.senderName} privately…`}
                         className="flex-1 text-xs bg-slate-50 border border-slate-200 focus:border-brand-300 rounded-xl px-3 py-2.5 outline-none transition-colors"
                       />
                       <button
@@ -853,6 +884,10 @@ export default function ChatReview() {
                         }
                       </button>
                     </div>
+                    <p className="text-[10px] text-slate-400 mt-1.5 flex items-center gap-1">
+                      <Lock size={8} className="shrink-0" />
+                      Private · not posted to the group
+                    </p>
                   </div>
                 </div>
               )}

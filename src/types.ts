@@ -158,9 +158,16 @@ export interface AdvisorPrivateMessage {
   senderId: string;
   senderName: string;
   senderRole: 'advisor' | 'user';
+  receiverId?: string;
+  receiverName?: string;
   text: string;
+  /** Primary timestamp field for privateThread messages. */
   createdAt: Date | null;
   isRead: boolean;
+  isPrivate?: boolean;
+  threadType?: string;
+  flaggedMessageRef?: string;
+  visibleTo?: string[];
 }
 
 export interface Resource {
