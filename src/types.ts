@@ -123,6 +123,7 @@ export interface PeerGroup {
   createdAt?: string;
   status?: string;
   category?: string;
+  moderator?: string;
 }
 
 export interface CaseMessage {

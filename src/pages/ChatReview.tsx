@@ -129,22 +129,26 @@ export default function ChatReview() {
     return () => unsubscribes.forEach(unsub => unsub());
   }, [groups]);
 
-  // Fetch peer groups
+  // Fetch peer groups — only those where group_moderator matches the logged-in advisor's name
   useEffect(() => {
     setLoadingGroups(true);
     const unsubscribe = onSnapshot(
       collection(db, GROUPS_COLLECTION),
       (snap) => {
-        const fetched: PeerGroup[] = snap.docs.map((doc) => {
-          const d = doc.data() as Record<string, unknown>;
-          return {
-            id: doc.id,
-            name: (d.group_name as string) ?? (d.name as string) ?? doc.id,
-            memberCount: (d.memberCount as number) ?? undefined,
-            status: (d.status as string) ?? undefined,
-            category: (d.group_category as string) ?? undefined,
-          };
-        });
+        const advisorName = advisorProfile?.name ?? '';
+        const fetched: PeerGroup[] = snap.docs
+          .map((doc) => {
+            const d = doc.data() as Record<string, unknown>;
+            return {
+              id: doc.id,
+              name: (d.group_name as string) ?? (d.name as string) ?? doc.id,
+              memberCount: (d.memberCount as number) ?? undefined,
+              status: (d.status as string) ?? undefined,
+              category: (d.group_category as string) ?? undefined,
+              moderator: (d.group_moderator as string) ?? undefined,
+            };
+          })
+          .filter((g) => g.moderator === advisorName);
         setGroups(fetched);
         if (fetched.length > 0 && !selectedGroup) {
           setSelectedGroup(fetched[0]);
@@ -161,7 +165,7 @@ export default function ChatReview() {
       }
     );
     return () => unsubscribe();
-  }, []);
+  }, [advisorProfile?.name]);
 
   // Real-time messages listener
   useEffect(() => {
