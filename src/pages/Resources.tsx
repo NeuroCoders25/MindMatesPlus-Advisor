@@ -101,15 +101,43 @@ export default function Resources() {
       });
       setResources(fetchedResources);
 
-      const uniqueAuthorIds = [...new Set(fetchedResources.map(r => r.authorId).filter(Boolean))];
-      const imageEntries = await Promise.all(
-        uniqueAuthorIds.map(async (id) => {
-          const snap = await getDoc(doc(db, 'advisors', id));
-          const url = snap.exists() ? (snap.data().profileImageUrl || '') : '';
-          return [id, url] as [string, string];
-        })
-      );
-      setAuthorImages(Object.fromEntries(imageEntries));
+      // Build image map from denormalized authorImageUrl on each resource first
+      const imageMap: Record<string, string> = {};
+      fetchedResources.forEach(r => {
+        if (r.authorId && r.authorImageUrl) imageMap[r.authorId] = r.authorImageUrl;
+      });
+      // Inject the current user's own image without needing a Firestore read
+      if (currentUser && advisorProfile?.profileImageUrl) {
+        imageMap[currentUser.uid] = advisorProfile.profileImageUrl;
+      }
+
+      // For any author still missing an image, fall back to a Firestore lookup
+      const missingIds = [...new Set(fetchedResources.map(r => r.authorId).filter(id => id && !imageMap[id]))];
+      if (missingIds.length > 0) {
+        const imageEntries = await Promise.all(
+          missingIds.map(async (id) => {
+            try {
+              const snap = await getDoc(doc(db, 'advisors', id));
+              const url = snap.exists() ? (snap.data().profileImageUrl || '') : '';
+              return [id, url] as [string, string];
+            } catch {
+              return [id, ''] as [string, string];
+            }
+          })
+        );
+        imageEntries.forEach(([id, url]) => { if (url) imageMap[id] = url; });
+      }
+      setAuthorImages(imageMap);
+
+      // Silently backfill authorImageUrl on the current user's old resources that are missing it
+      if (currentUser && advisorProfile?.profileImageUrl) {
+        const toBackfill = fetchedResources.filter(
+          r => r.authorId === currentUser.uid && !r.authorImageUrl
+        );
+        toBackfill.forEach(r => {
+          updateDoc(doc(db, 'resources', r.id), { authorImageUrl: advisorProfile.profileImageUrl }).catch(() => {});
+        });
+      }
     } catch (error) {
       console.error("Error fetching resources:", error);
     } finally {
@@ -242,7 +270,9 @@ export default function Resources() {
         resource: newResource.content,
         author: advisorProfile.name,
         authorId: currentUser.uid,
-        ...(newResource.type === 'image' ? { image_url: imageUrl || "" } : {})
+        authorImageUrl: advisorProfile.profileImageUrl || '',
+        ...(newResource.type === 'image' ? { image_url: imageUrl || "" } : {}),
+        ...(!editingResource ? { likeCount: 0, viewCount: 0 } : {})
       };
 
       if (editingResource) {
@@ -438,11 +468,23 @@ export default function Resources() {
                     </span>
                   </div>
 
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <Heart size={14} className="text-red-400" />
+                      <span className="text-xs font-semibold">{resource.likeCount ?? 0}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-slate-400">
+                      <MessageCircle size={14} className="text-brand-400" />
+                      <span className="text-xs font-semibold">{resource.viewCount ?? 0}</span>
+                    </div>
+                  </div>
+
                   <div className="pt-6 border-t border-slate-50 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       {(() => {
                         const imgUrl = authorImages[resource.authorId] ||
-                          (resource.author === advisorProfile?.name ? advisorProfile?.profileImageUrl : undefined);
+                          resource.authorImageUrl ||
+                          (resource.authorId === currentUser?.uid ? advisorProfile?.profileImageUrl : undefined);
                         return imgUrl ? (
                           <img
                             src={imgUrl}

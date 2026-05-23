@@ -179,5 +179,8 @@ export interface Resource {
   image_url?: string; // image URL if applicable
   author: string;
   authorId: string;
+  authorImageUrl?: string;
   createdAt: string;
+  likeCount?: number;
+  viewCount?: number;
 }
