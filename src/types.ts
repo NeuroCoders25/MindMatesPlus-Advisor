@@ -124,6 +124,7 @@ export interface PeerGroup {
   status?: string;
   category?: string;
   moderator?: string;
+  imageUrl?: string;
 }
 
 export interface CaseMessage {

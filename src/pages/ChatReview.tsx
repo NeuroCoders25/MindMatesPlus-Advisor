@@ -146,6 +146,7 @@ export default function ChatReview() {
               status: (d.status as string) ?? undefined,
               category: (d.group_category as string) ?? undefined,
               moderator: (d.group_moderator as string) ?? undefined,
+              imageUrl: (d.group_image_url as string) ?? (d.group_image as string) ?? (d.imageUrl as string) ?? undefined,
             };
           })
           .filter((g) => g.moderator === advisorName);
@@ -466,8 +467,12 @@ export default function ChatReview() {
                     selectedGroup?.id === group.id ? 'bg-brand-50' : 'hover:bg-slate-50'
                   )}
                 >
-                  <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-sm shrink-0">
-                    {group.name.charAt(0).toUpperCase()}
+                  <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-sm shrink-0 overflow-hidden">
+                    {group.imageUrl ? (
+                      <img src={group.imageUrl} alt={group.name} className="w-full h-full object-cover" />
+                    ) : (
+                      group.name.charAt(0).toUpperCase()
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <h5 className="text-sm font-bold text-slate-800 truncate">{group.name}</h5>
@@ -493,8 +498,12 @@ export default function ChatReview() {
             <>
               <div className="glass-card p-5 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-xl">
-                    {selectedGroup.name.charAt(0).toUpperCase()}
+                  <div className="w-12 h-12 rounded-2xl bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-xl overflow-hidden">
+                    {selectedGroup.imageUrl ? (
+                      <img src={selectedGroup.imageUrl} alt={selectedGroup.name} className="w-full h-full object-cover" />
+                    ) : (
+                      selectedGroup.name.charAt(0).toUpperCase()
+                    )}
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-slate-800">{selectedGroup.name}</h3>
