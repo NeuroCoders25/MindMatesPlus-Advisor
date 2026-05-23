@@ -30,13 +30,14 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-brand-50 via-white to-slate-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#0f1535] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="flex justify-center mb-8">
+        <div className="flex flex-col items-center mb-8 gap-2">
           <img src={logo} alt="MindMates+" className="h-16 object-contain" />
+          <p className="text-white/60 text-sm tracking-wide">Advisor Portal</p>
         </div>
 
-        <div className="glass-card p-8">
+        <div className="bg-white rounded-2xl shadow-xl p-8">
           <h1 className="text-2xl font-bold text-slate-800 mb-1">Reset password</h1>
           <p className="text-slate-500 text-sm mb-6">
             Enter your email and we'll send you a reset link.

@@ -67,7 +67,7 @@ export default function Sidebar() {
   }, []);
 
   return (
-    <aside className="w-64 h-screen bg-white border-r border-slate-200 flex flex-col sticky top-0">
+    <aside className="w-64 h-screen bg-[#0f1535] border-r border-[#1e2650] flex flex-col sticky top-0">
       <div className="p-12 flex items-center gap-3">
         <div className="flex items-center space-x-2">
           <img src={logo} alt="MindMates" className="h-15 object-contain" />
@@ -82,11 +82,11 @@ export default function Sidebar() {
             className={({ isActive }) => cn(
               "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
               isActive
-                ? "bg-brand-50 text-brand-600 font-medium"
-                : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                ? "bg-[#1e2a52] text-brand-400 font-medium"
+                : "text-white/60 hover:bg-white/8 hover:text-white"
             )}
           >
-            <item.icon size={20} className={cn("transition-colors", "group-hover:text-brand-500")} />
+            <item.icon size={20} className="transition-colors" />
             <span>{item.label}</span>
           </NavLink>
         ))}
@@ -107,9 +107,9 @@ export default function Sidebar() {
 
         <button
           onClick={() => setMenuOpen((v) => !v)}
-          className="w-full text-left bg-slate-50 hover:bg-slate-100 rounded-2xl p-4 transition-colors"
+          className="w-full text-left bg-[#1a2448] hover:bg-[#1e2a52] rounded-2xl p-4 transition-colors"
         >
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Admin Mode</p>
+          <p className="text-xs font-semibold text-white/60 uppercase tracking-wider mb-2">Admin Mode</p>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full border-2 border-white shadow-sm shrink-0 overflow-hidden">
               {profileImageUrl ? (
@@ -121,8 +121,8 @@ export default function Sidebar() {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-slate-800 truncate">{name}</p>
-              {role && <p className="text-xs text-slate-500 truncate">{role}</p>}
+              <p className="text-sm font-semibold text-white truncate">{name}</p>
+              {role && <p className="text-xs text-white/70 truncate">{role}</p>}
             </div>
             <ChevronUp
               size={16}

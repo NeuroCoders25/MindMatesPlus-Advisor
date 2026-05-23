@@ -414,13 +414,6 @@ export default function ChatReview() {
           </h1>
           <p className="text-slate-500 mt-1">Monitor real-time peer group conversations.</p>
         </div>
-        <div className="flex items-center gap-2 text-xs font-bold mt-2">
-          {connected ? (
-            <span className="flex items-center gap-1 text-emerald-500"><Wifi size={14} /> Live</span>
-          ) : (
-            <span className="flex items-center gap-1 text-red-400"><WifiOff size={14} /> Disconnected</span>
-          )}
-        </div>
       </header>
 
       {error && (
@@ -528,10 +521,6 @@ export default function ChatReview() {
                       Reviewing flagged message
                     </span>
                   )}
-                  <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                    <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    Live
-                  </span>
                 </div>
               </div>
 
