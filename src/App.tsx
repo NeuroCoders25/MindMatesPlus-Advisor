@@ -21,6 +21,7 @@ import Reports from './pages/Reports';
 import AdvisorChat from './pages/AdvisorChat';
 import Settings from './pages/Settings';
 import Resources from './pages/Resources';
+import AdvisorProfile from './pages/AdvisorProfile';
 
 function ProtectedLayout() {
   const { currentUser, loading } = useAuth();
@@ -45,6 +46,7 @@ function ProtectedLayout() {
               <Route path="/reports" element={<Reports />} />
               <Route path="/chat" element={<AdvisorChat />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/profile" element={<AdvisorProfile />} />
             </Routes>
           </div>
         </main>

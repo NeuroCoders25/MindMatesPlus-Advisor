@@ -1,11 +1,33 @@
-import React, { useEffect, useState } from 'react';
-import { Bell, Search, User } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Bell, LogOut, Search, User } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { subscribeAlertCount } from './FlaggedMessageAlert';
 
 export default function Navbar() {
   const [alertCount, setAlertCount] = useState(0);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const { logout } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => subscribeAlertCount(setAlertCount), []);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  async function handleSignOut() {
+    setDropdownOpen(false);
+    await logout();
+    navigate('/login');
+  }
 
   return (
     <header className="h-16 bg-[#0f1535] border-b border-[#1e2650] flex items-center justify-between px-8 sticky top-0 z-10">
@@ -19,7 +41,7 @@ export default function Navbar() {
           />
         </div>
       </div>
-      
+
       <div className="flex items-center gap-4">
         <button className="p-2 text-white/60 hover:bg-white/10 rounded-xl transition-colors relative">
           <Bell size={20} />
@@ -32,11 +54,29 @@ export default function Navbar() {
           )}
         </button>
         <div className="h-8 w-[1px] bg-white/15 mx-2"></div>
-        <div className="flex items-center gap-3 cursor-pointer hover:bg-white/10 p-1 pr-3 rounded-xl transition-colors">
-          <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white/60">
-            <User size={18} />
-          </div>
-          <span className="text-sm font-medium text-white/80">Advisor Portal</span>
+
+        <div className="relative" ref={dropdownRef}>
+          <button
+            onClick={() => setDropdownOpen((v) => !v)}
+            className="flex items-center gap-3 cursor-pointer hover:bg-white/10 p-1 pr-3 rounded-xl transition-colors"
+          >
+            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white/60">
+              <User size={18} />
+            </div>
+            <span className="text-sm font-medium text-white/80">Advisor Portal</span>
+          </button>
+
+          {dropdownOpen && (
+            <div className="absolute right-0 mt-2 w-44 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-50">
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <LogOut size={16} />
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>
