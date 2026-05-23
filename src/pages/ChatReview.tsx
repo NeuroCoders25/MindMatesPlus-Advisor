@@ -129,22 +129,27 @@ export default function ChatReview() {
     return () => unsubscribes.forEach(unsub => unsub());
   }, [groups]);
 
-  // Fetch peer groups
+  // Fetch peer groups — only those where group_moderator matches the logged-in advisor's name
   useEffect(() => {
     setLoadingGroups(true);
     const unsubscribe = onSnapshot(
       collection(db, GROUPS_COLLECTION),
       (snap) => {
-        const fetched: PeerGroup[] = snap.docs.map((doc) => {
-          const d = doc.data() as Record<string, unknown>;
-          return {
-            id: doc.id,
-            name: (d.group_name as string) ?? (d.name as string) ?? doc.id,
-            memberCount: (d.memberCount as number) ?? undefined,
-            status: (d.status as string) ?? undefined,
-            category: (d.group_category as string) ?? undefined,
-          };
-        });
+        const advisorName = advisorProfile?.name ?? '';
+        const fetched: PeerGroup[] = snap.docs
+          .map((doc) => {
+            const d = doc.data() as Record<string, unknown>;
+            return {
+              id: doc.id,
+              name: (d.group_name as string) ?? (d.name as string) ?? doc.id,
+              memberCount: (d.memberCount as number) ?? undefined,
+              status: (d.status as string) ?? undefined,
+              category: (d.group_category as string) ?? undefined,
+              moderator: (d.group_moderator as string) ?? undefined,
+              imageUrl: (d.group_image_url as string) ?? (d.group_image as string) ?? (d.imageUrl as string) ?? undefined,
+            };
+          })
+          .filter((g) => g.moderator === advisorName);
         setGroups(fetched);
         if (fetched.length > 0 && !selectedGroup) {
           setSelectedGroup(fetched[0]);
@@ -161,7 +166,7 @@ export default function ChatReview() {
       }
     );
     return () => unsubscribe();
-  }, []);
+  }, [advisorProfile?.name]);
 
   // Real-time messages listener
   useEffect(() => {
@@ -409,13 +414,6 @@ export default function ChatReview() {
           </h1>
           <p className="text-slate-500 mt-1">Monitor real-time peer group conversations.</p>
         </div>
-        <div className="flex items-center gap-2 text-xs font-bold mt-2">
-          {connected ? (
-            <span className="flex items-center gap-1 text-emerald-500"><Wifi size={14} /> Live</span>
-          ) : (
-            <span className="flex items-center gap-1 text-red-400"><WifiOff size={14} /> Disconnected</span>
-          )}
-        </div>
       </header>
 
       {error && (
@@ -462,8 +460,12 @@ export default function ChatReview() {
                     selectedGroup?.id === group.id ? 'bg-brand-50' : 'hover:bg-slate-50'
                   )}
                 >
-                  <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-sm shrink-0">
-                    {group.name.charAt(0).toUpperCase()}
+                  <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-sm shrink-0 overflow-hidden">
+                    {group.imageUrl ? (
+                      <img src={group.imageUrl} alt={group.name} className="w-full h-full object-cover" />
+                    ) : (
+                      group.name.charAt(0).toUpperCase()
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <h5 className="text-sm font-bold text-slate-800 truncate">{group.name}</h5>
@@ -489,8 +491,12 @@ export default function ChatReview() {
             <>
               <div className="glass-card p-5 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-xl">
-                    {selectedGroup.name.charAt(0).toUpperCase()}
+                  <div className="w-12 h-12 rounded-2xl bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-xl overflow-hidden">
+                    {selectedGroup.imageUrl ? (
+                      <img src={selectedGroup.imageUrl} alt={selectedGroup.name} className="w-full h-full object-cover" />
+                    ) : (
+                      selectedGroup.name.charAt(0).toUpperCase()
+                    )}
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-slate-800">{selectedGroup.name}</h3>
@@ -515,10 +521,6 @@ export default function ChatReview() {
                       Reviewing flagged message
                     </span>
                   )}
-                  <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                    <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    Live
-                  </span>
                 </div>
               </div>
 
@@ -747,36 +749,6 @@ export default function ChatReview() {
                     </p>
                   </div>
 
-                  {/* Private note */}
-                  <div className="bg-slate-50 rounded-2xl p-4">
-                    <h6 className="text-xs font-bold text-slate-600 mb-3 flex items-center gap-1.5">
-                      <FileText size={13} className="text-brand-500" />
-                      Private Note
-                    </h6>
-                    <textarea
-                      value={noteText}
-                      onChange={(e) => setNoteText(e.target.value)}
-                      placeholder="Add a private note about this flagged message (only visible to advisors)..."
-                      rows={4}
-                      className="w-full text-xs bg-white border border-slate-200 focus:border-brand-300 rounded-xl p-3 outline-none resize-none transition-colors"
-                    />
-                    <button
-                      onClick={handleSaveNote}
-                      disabled={noteSaving || !noteText.trim()}
-                      className="mt-2 w-full flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold py-2.5 rounded-xl transition-colors disabled:opacity-50"
-                    >
-                      {noteSaving
-                        ? <Loader2 size={13} className="animate-spin" />
-                        : <Save size={13} />
-                      }
-                      Save Note
-                    </button>
-                    {selectedFlaggedMsg.advisorNote && (
-                      <p className="text-[10px] text-emerald-600 mt-2 flex items-center gap-1">
-                        <CheckCircle size={9} /> Note saved
-                      </p>
-                    )}
-                  </div>
                 </div>
               )}
 

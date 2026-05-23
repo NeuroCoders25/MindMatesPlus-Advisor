@@ -123,6 +123,8 @@ export interface PeerGroup {
   createdAt?: string;
   status?: string;
   category?: string;
+  moderator?: string;
+  imageUrl?: string;
 }
 
 export interface CaseMessage {
@@ -179,5 +181,6 @@ export interface Resource {
   image_url?: string; // image URL if applicable
   author: string;
   authorId: string;
+  authorImageUrl?: string;
   createdAt: string;
 }

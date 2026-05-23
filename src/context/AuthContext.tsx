@@ -15,6 +15,10 @@ export interface AdvisorProfile {
   role: string;
   email: string;
   profileImageUrl?: string;
+  yearsOfExperience?: number;
+  qualifications?: string;
+  about?: string;
+  isModerator?: boolean;
 }
 
 interface AuthContextType {
@@ -83,6 +87,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               role: data.role,
               email: data.email,
               profileImageUrl: data.profileImageUrl,
+              yearsOfExperience: data.yearsOfExperience,
+              qualifications: data.qualifications,
+              about: data.about,
+              isModerator: data.isModerator ?? false,
             });
           }
         } catch {

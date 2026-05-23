@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import React from 'react';
+import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   AlertTriangle,
@@ -8,10 +8,7 @@ import {
   BookOpen,
   BarChart3,
   FileText,
-  StickyNote,
   Settings,
-  LogOut,
-  ChevronUp,
   Library
 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -41,33 +38,15 @@ function getInitials(name: string) {
 }
 
 export default function Sidebar() {
-  const { advisorProfile, logout } = useAuth();
-  const navigate = useNavigate();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const { advisorProfile } = useAuth();
 
   const name = advisorProfile?.name ?? 'Advisor';
   const role = advisorProfile?.role ?? '';
   const initials = getInitials(name);
   const profileImageUrl = advisorProfile?.profileImageUrl;
 
-  async function handleSignOut() {
-    await logout();
-    navigate('/login');
-  }
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   return (
-    <aside className="w-64 h-screen bg-white border-r border-slate-200 flex flex-col sticky top-0">
+    <aside className="w-64 h-screen bg-[#0f1535] border-r border-[#1e2650] flex flex-col sticky top-0">
       <div className="p-12 flex items-center gap-3">
         <div className="flex items-center space-x-2">
           <img src={logo} alt="MindMates" className="h-15 object-contain" />
@@ -82,34 +61,24 @@ export default function Sidebar() {
             className={({ isActive }) => cn(
               "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
               isActive
-                ? "bg-brand-50 text-brand-600 font-medium"
-                : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                ? "bg-[#1e2a52] text-brand-400 font-medium"
+                : "text-white/60 hover:bg-white/8 hover:text-white"
             )}
           >
-            <item.icon size={20} className={cn("transition-colors", "group-hover:text-brand-500")} />
+            <item.icon size={20} className="transition-colors" />
             <span>{item.label}</span>
           </NavLink>
         ))}
       </nav>
 
-      <div className="p-4 border-t border-slate-100" ref={menuRef}>
-        {menuOpen && (
-          <div className="mb-2 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
-            <button
-              onClick={handleSignOut}
-              className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
-            >
-              <LogOut size={16} />
-              Sign out
-            </button>
-          </div>
-        )}
-
-        <button
-          onClick={() => setMenuOpen((v) => !v)}
-          className="w-full text-left bg-slate-50 hover:bg-slate-100 rounded-2xl p-4 transition-colors"
+      <div className="p-4 border-t border-slate-100">
+        <NavLink
+          to="/profile"
+          className={({ isActive }) =>
+            `block rounded-2xl p-4 transition-all duration-200 ${isActive ? 'bg-[#253060]' : 'bg-[#1a2448] hover:bg-[#1e2a52]'}`
+          }
         >
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Admin Mode</p>
+          <p className="text-xs font-semibold text-white/60 uppercase tracking-wider mb-2 text-center">Advisor Mode</p>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full border-2 border-white shadow-sm shrink-0 overflow-hidden">
               {profileImageUrl ? (
@@ -121,18 +90,11 @@ export default function Sidebar() {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-slate-800 truncate">{name}</p>
-              {role && <p className="text-xs text-slate-500 truncate">{role}</p>}
+              <p className="text-sm font-semibold text-white truncate">{name}</p>
+              {role && <p className="text-xs text-white/70 truncate">{role}</p>}
             </div>
-            <ChevronUp
-              size={16}
-              className={cn(
-                'text-slate-400 transition-transform flex-shrink-0',
-                menuOpen ? 'rotate-180' : 'rotate-0'
-              )}
-            />
           </div>
-        </button>
+        </NavLink>
       </div>
     </aside>
   );
