@@ -73,6 +73,7 @@ export default function AdvisorChat() {
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -186,6 +187,24 @@ export default function AdvisorChat() {
 
     return () => unsubscribe();
   }, [selectedChat, currentUser]);
+
+  // Track unread counts per chat (admin messages not yet read by this advisor)
+  useEffect(() => {
+    if (!currentUser || chats.length === 0) return;
+
+    const unsubscribes = chats.map((chat) => {
+      const q = query(
+        collection(db, 'privateChats', chat.id, 'messages'),
+        where('senderRole', '==', 'admin'),
+        where('isRead', '==', false)
+      );
+      return onSnapshot(q, (snap) => {
+        setUnreadCounts(prev => ({ ...prev, [chat.id]: snap.size }));
+      });
+    });
+
+    return () => unsubscribes.forEach(unsub => unsub());
+  }, [currentUser, chats]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -326,6 +345,7 @@ export default function AdvisorChat() {
             {sortedAdmins.map((admin) => {
               const chat = chats.find(c => c.participants.includes(admin.id));
               const isSelected = selectedChat?.participants.includes(admin.id);
+              const unread = chat ? (unreadCounts[chat.id] ?? 0) : 0;
 
               return (
                 <button
@@ -348,28 +368,41 @@ export default function AdvisorChat() {
                     )} />
                   </div>
                   <div className="text-left flex-1 min-w-0">
-                    <div className="flex justify-between items-start">
+                    <div className="flex justify-between items-center">
                       <p className={cn(
-                        "text-sm font-bold truncate",
-                        isSelected ? "text-slate-900" : "text-slate-600 group-hover:text-slate-900"
+                        "text-sm truncate",
+                        unread > 0 ? "font-extrabold text-slate-900" : isSelected ? "font-bold text-slate-900" : "font-bold text-slate-600 group-hover:text-slate-900"
                       )}>
                         {admin.name}
                       </p>
                       {chat?.lastMessageAt && (
-                        <span className="text-[10px] text-slate-400 font-medium">
+                        <span className={cn(
+                          "text-[10px] font-medium shrink-0 ml-1",
+                          unread > 0 ? "text-brand-500" : "text-slate-400"
+                        )}>
                           {formatTime(chat.lastMessageAt)}
                         </span>
                       )}
                     </div>
-                    {chat?.lastMessage ? (
-                      <p className="text-xs text-slate-500 truncate mt-0.5 font-medium">
-                        {chat.lastMessage}
-                      </p>
-                    ) : (
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight mt-0.5">
-                        {admin.role || 'Admin'}
-                      </p>
-                    )}
+                    <div className="flex justify-between items-center mt-0.5">
+                      {chat?.lastMessage ? (
+                        <p className={cn(
+                          "text-xs truncate",
+                          unread > 0 ? "font-semibold text-slate-700" : "font-medium text-slate-500"
+                        )}>
+                          {chat.lastMessage}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                          {admin.role || 'Admin'}
+                        </p>
+                      )}
+                      {unread > 0 && (
+                        <span className="ml-2 shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-brand-500 text-white text-[10px] font-bold flex items-center justify-center">
+                          {unread > 9 ? '9+' : unread}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </button>
               );
