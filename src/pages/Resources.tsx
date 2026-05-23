@@ -21,7 +21,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { db, storage } from '../lib/firebase';
-import { collection, addDoc, getDocs, query, orderBy, serverTimestamp, Timestamp, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, orderBy, serverTimestamp, Timestamp, deleteDoc, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import { uploadImageToImageKit } from '../services/imageUploadService';
 import { useAuth } from '../context/AuthContext';
@@ -63,6 +63,7 @@ export default function Resources() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [authorImages, setAuthorImages] = useState<Record<string, string>>({});
 
   // View interactions modal state
   const [viewingResource, setViewingResource] = useState<Resource | null>(null);
@@ -90,16 +91,25 @@ export default function Resources() {
       const q = query(collection(db, 'resources'), orderBy('createdAt', 'desc'));
       const querySnapshot = await getDocs(q);
       const fetchedResources: Resource[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
         fetchedResources.push({
-          id: doc.id,
+          id: docSnap.id,
           ...data,
-          // Ensure createdAt is a string for the interface
           createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString().split('T')[0] : data.createdAt
         } as Resource);
       });
       setResources(fetchedResources);
+
+      const uniqueAuthorIds = [...new Set(fetchedResources.map(r => r.authorId).filter(Boolean))];
+      const imageEntries = await Promise.all(
+        uniqueAuthorIds.map(async (id) => {
+          const snap = await getDoc(doc(db, 'advisors', id));
+          const url = snap.exists() ? (snap.data().profileImageUrl || '') : '';
+          return [id, url] as [string, string];
+        })
+      );
+      setAuthorImages(Object.fromEntries(imageEntries));
     } catch (error) {
       console.error("Error fetching resources:", error);
     } finally {
@@ -430,9 +440,21 @@ export default function Resources() {
 
                   <div className="pt-6 border-t border-slate-50 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-[10px]">
-                        {resource.author.split(' ').map(n => n[0]).join('')}
-                      </div>
+                      {(() => {
+                        const imgUrl = authorImages[resource.authorId] ||
+                          (resource.author === advisorProfile?.name ? advisorProfile?.profileImageUrl : undefined);
+                        return imgUrl ? (
+                          <img
+                            src={imgUrl}
+                            alt={resource.author}
+                            className="w-8 h-8 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-[10px]">
+                            {resource.author.split(' ').map(n => n[0]).join('')}
+                          </div>
+                        );
+                      })()}
                       <div>
                         <p className="text-[10px] font-bold text-slate-800">{resource.author}</p>
                         <p className="text-[10px] text-slate-400">{resource.createdAt}</p>
