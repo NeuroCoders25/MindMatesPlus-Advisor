@@ -747,36 +747,6 @@ export default function ChatReview() {
                     </p>
                   </div>
 
-                  {/* Private note */}
-                  <div className="bg-slate-50 rounded-2xl p-4">
-                    <h6 className="text-xs font-bold text-slate-600 mb-3 flex items-center gap-1.5">
-                      <FileText size={13} className="text-brand-500" />
-                      Private Note
-                    </h6>
-                    <textarea
-                      value={noteText}
-                      onChange={(e) => setNoteText(e.target.value)}
-                      placeholder="Add a private note about this flagged message (only visible to advisors)..."
-                      rows={4}
-                      className="w-full text-xs bg-white border border-slate-200 focus:border-brand-300 rounded-xl p-3 outline-none resize-none transition-colors"
-                    />
-                    <button
-                      onClick={handleSaveNote}
-                      disabled={noteSaving || !noteText.trim()}
-                      className="mt-2 w-full flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold py-2.5 rounded-xl transition-colors disabled:opacity-50"
-                    >
-                      {noteSaving
-                        ? <Loader2 size={13} className="animate-spin" />
-                        : <Save size={13} />
-                      }
-                      Save Note
-                    </button>
-                    {selectedFlaggedMsg.advisorNote && (
-                      <p className="text-[10px] text-emerald-600 mt-2 flex items-center gap-1">
-                        <CheckCircle size={9} /> Note saved
-                      </p>
-                    )}
-                  </div>
                 </div>
               )}
 

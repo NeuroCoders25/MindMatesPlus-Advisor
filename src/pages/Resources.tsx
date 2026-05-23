@@ -1,21 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Plus, 
-  Search, 
-  Filter, 
-  Image as ImageIcon, 
-  Type, 
-  MoreVertical, 
-  Trash2, 
-  Edit3, 
+import {
+  Plus,
+  Search,
+  Image as ImageIcon,
+  Type,
+  MoreVertical,
+  Trash2,
+  Edit3,
   ExternalLink,
   X,
   Upload,
   CheckCircle2,
-  Calendar,
-  User,
   ChevronDown,
-  Loader2
+  Loader2,
+  Heart,
+  MessageCircle,
+  Calendar,
+  User
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -25,6 +26,21 @@ import { ref, deleteObject } from 'firebase/storage';
 import { uploadImageToImageKit } from '../services/imageUploadService';
 import { useAuth } from '../context/AuthContext';
 import { Resource } from '../types';
+
+interface ResourceLike {
+  id: string;
+  userId: string;
+  userName?: string;
+  createdAt: string;
+}
+
+interface ResourceComment {
+  id: string;
+  userId: string;
+  userName: string;
+  text: string;
+  createdAt: string;
+}
 
 const CATEGORIES = [
   'Wellness - Thriving',
@@ -47,6 +63,12 @@ export default function Resources() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+
+  // View interactions modal state
+  const [viewingResource, setViewingResource] = useState<Resource | null>(null);
+  const [resourceLikes, setResourceLikes] = useState<ResourceLike[]>([]);
+  const [resourceComments, setResourceComments] = useState<ResourceComment[]>([]);
+  const [isLoadingInteractions, setIsLoadingInteractions] = useState(false);
   
   // New Resource Form State
   const [newResource, setNewResource] = useState({
@@ -82,6 +104,47 @@ export default function Resources() {
       console.error("Error fetching resources:", error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchResourceInteractions = async (resource: Resource) => {
+    setViewingResource(resource);
+    setIsLoadingInteractions(true);
+    setResourceLikes([]);
+    setResourceComments([]);
+    try {
+      const [likesSnap, commentsSnap] = await Promise.all([
+        getDocs(query(collection(db, 'resources', resource.id, 'likes'), orderBy('createdAt', 'desc'))),
+        getDocs(query(collection(db, 'resources', resource.id, 'comments'), orderBy('createdAt', 'desc')))
+      ]);
+
+      const likes: ResourceLike[] = likesSnap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          userId: data.userId || '',
+          userName: data.userName,
+          createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString().split('T')[0] : (data.createdAt || '')
+        };
+      });
+
+      const comments: ResourceComment[] = commentsSnap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          userId: data.userId || '',
+          userName: data.userName || 'Anonymous',
+          text: data.text || data.comment || '',
+          createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString().split('T')[0] : (data.createdAt || '')
+        };
+      });
+
+      setResourceLikes(likes);
+      setResourceComments(comments);
+    } catch (error) {
+      console.error('Error fetching resource interactions:', error);
+    } finally {
+      setIsLoadingInteractions(false);
     }
   };
 
@@ -375,7 +438,10 @@ export default function Resources() {
                         <p className="text-[10px] text-slate-400">{resource.createdAt}</p>
                       </div>
                     </div>
-                    <button className="text-brand-600 hover:text-brand-700 font-bold text-xs flex items-center gap-1 transition-colors">
+                    <button
+                      onClick={() => fetchResourceInteractions(resource)}
+                      className="text-brand-600 hover:text-brand-700 font-bold text-xs flex items-center gap-1 transition-colors"
+                    >
                       View
                       <ExternalLink size={12} />
                     </button>
@@ -386,6 +452,140 @@ export default function Resources() {
           </AnimatePresence>
         </div>
       )}
+
+      {/* View Interactions Modal */}
+      <AnimatePresence>
+        {viewingResource && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setViewingResource(null)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            >
+              {/* Modal Header */}
+              <div className="p-6 border-b border-slate-100 flex items-start justify-between gap-4 bg-slate-50/50">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold text-brand-500 uppercase tracking-wider mb-1">{viewingResource.category}</p>
+                  <h2 className="text-xl font-bold text-slate-900 leading-snug truncate">{viewingResource.title}</h2>
+                  <div className="flex items-center gap-2 mt-1 text-slate-400 text-xs">
+                    <User size={11} />
+                    <span>{viewingResource.author}</span>
+                    <span>·</span>
+                    <Calendar size={11} />
+                    <span>{viewingResource.createdAt}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setViewingResource(null)}
+                  className="p-2 hover:bg-slate-200/50 rounded-full transition-colors text-slate-400 hover:text-slate-600 flex-shrink-0"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Interaction Stats */}
+              <div className="px-6 py-4 border-b border-slate-100 flex gap-6">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-red-50 rounded-xl">
+                    <Heart size={16} className="text-red-500" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-slate-800 leading-none">{resourceLikes.length}</p>
+                    <p className="text-[10px] text-slate-400 font-medium">Likes</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-brand-50 rounded-xl">
+                    <MessageCircle size={16} className="text-brand-500" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-slate-800 leading-none">{resourceComments.length}</p>
+                    <p className="text-[10px] text-slate-400 font-medium">Comments</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Scrollable content */}
+              <div className="overflow-y-auto flex-1 p-6 space-y-6">
+                {isLoadingInteractions ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-3">
+                    <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+                    <p className="text-sm text-slate-500">Loading interactions...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Comments Section */}
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                        <MessageCircle size={14} className="text-brand-500" />
+                        Comments
+                      </h3>
+                      {resourceComments.length === 0 ? (
+                        <div className="text-center py-6 bg-slate-50 rounded-2xl">
+                          <MessageCircle size={24} className="text-slate-300 mx-auto mb-2" />
+                          <p className="text-xs text-slate-400">No comments yet</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {resourceComments.map(comment => (
+                            <div key={comment.id} className="bg-slate-50 rounded-2xl p-4">
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="w-7 h-7 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-[10px] flex-shrink-0">
+                                  {comment.userName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                                </div>
+                                <div>
+                                  <p className="text-xs font-bold text-slate-800">{comment.userName}</p>
+                                  <p className="text-[10px] text-slate-400">{comment.createdAt}</p>
+                                </div>
+                              </div>
+                              <p className="text-sm text-slate-600 leading-relaxed">{comment.text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Likes Section */}
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                        <Heart size={14} className="text-red-500" />
+                        Liked by
+                      </h3>
+                      {resourceLikes.length === 0 ? (
+                        <div className="text-center py-6 bg-slate-50 rounded-2xl">
+                          <Heart size={24} className="text-slate-300 mx-auto mb-2" />
+                          <p className="text-xs text-slate-400">No likes yet</p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {resourceLikes.map(like => (
+                            <div key={like.id} className="flex items-center gap-2 bg-red-50 rounded-full px-3 py-1.5">
+                              <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center text-red-500 font-bold text-[9px] flex-shrink-0">
+                                {like.userName ? like.userName.split(' ').map(n => n[0]).join('').slice(0, 2) : '?'}
+                              </div>
+                              <p className="text-[11px] font-semibold text-slate-700">
+                                {like.userName || like.userId.slice(0, 8)}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Add Resource Modal */}
       <AnimatePresence>

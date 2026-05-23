@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Settings as SettingsIcon, Bell, Shield, User, Globe, Moon, Save, Upload, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Settings as SettingsIcon, Bell, Shield, User, Globe, Moon, Save, Upload, Loader2, CheckCircle, XCircle, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -34,8 +34,14 @@ export default function Settings() {
   const email = advisorProfile?.email ?? '';
   const initials = getInitials(name);
   const originalImageUrl = advisorProfile?.profileImageUrl;
-  // Show local object URL while a new file is staged; fall back to saved URL
   const previewImageUrl = localPreviewUrl ?? originalImageUrl;
+
+  const [yearsOfExperience, setYearsOfExperience] = useState<string>(
+    advisorProfile?.yearsOfExperience !== undefined ? String(advisorProfile.yearsOfExperience) : ''
+  );
+  const [qualifications, setQualifications] = useState(advisorProfile?.qualifications ?? '');
+  const [about, setAbout] = useState(advisorProfile?.about ?? '');
+  const [isModerator, setIsModerator] = useState(advisorProfile?.isModerator ?? false);
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -49,24 +55,42 @@ export default function Settings() {
   }
 
   async function handleSave() {
-    if (selectedImageFile && currentUser) {
-      setIsUploading(true);
-      try {
-        const url = await uploadImageToImageKit(selectedImageFile, 'advisors');
-        await updateDoc(doc(db, 'advisors', currentUser.uid), { profileImageUrl: url });
-        updateAdvisorProfile({ profileImageUrl: url });
-        // Clean up local preview
+    if (!currentUser) return;
+    setIsUploading(true);
+    try {
+      let profileImageUrl = originalImageUrl;
+
+      if (selectedImageFile) {
+        profileImageUrl = await uploadImageToImageKit(selectedImageFile, 'advisors');
         if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
         setSelectedImageFile(null);
         setLocalPreviewUrl(null);
-      } catch (err) {
-        console.error('Profile photo upload failed:', err);
-        setPhotoError('Upload failed. Please try again.');
-        setIsUploading(false);
-        return;
       }
+
+      const expNum = yearsOfExperience !== '' ? Number(yearsOfExperience) : undefined;
+      const updates: Record<string, unknown> = {
+        yearsOfExperience: expNum,
+        qualifications,
+        about,
+        isModerator,
+        ...(profileImageUrl && { profileImageUrl }),
+      };
+
+      await updateDoc(doc(db, 'advisors', currentUser.uid), updates);
+      updateAdvisorProfile({
+        yearsOfExperience: expNum,
+        qualifications,
+        about,
+        isModerator,
+        ...(profileImageUrl && { profileImageUrl }),
+      });
+    } catch (err) {
+      console.error('Profile save failed:', err);
+      setPhotoError('Save failed. Please try again.');
       setIsUploading(false);
+      return;
     }
+    setIsUploading(false);
     showToast('success', 'Settings saved successfully');
   }
 
@@ -75,6 +99,10 @@ export default function Settings() {
     setSelectedImageFile(null);
     setLocalPreviewUrl(null);
     setPhotoError('');
+    setYearsOfExperience(advisorProfile?.yearsOfExperience !== undefined ? String(advisorProfile.yearsOfExperience) : '');
+    setQualifications(advisorProfile?.qualifications ?? '');
+    setAbout(advisorProfile?.about ?? '');
+    setIsModerator(advisorProfile?.isModerator ?? false);
     showToast('discard', 'Changes discarded');
   }
 
@@ -189,6 +217,65 @@ export default function Settings() {
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Email Address</label>
                 <input type="email" defaultValue={email} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Years of Experience</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={60}
+                    value={yearsOfExperience}
+                    onChange={e => setYearsOfExperience(e.target.value)}
+                    placeholder="e.g. 5"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Qualifications</label>
+                  <input
+                    type="text"
+                    value={qualifications}
+                    onChange={e => setQualifications(e.target.value)}
+                    placeholder="e.g. MSc Psychology, CBT Certified"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">About</label>
+                <textarea
+                  rows={4}
+                  value={about}
+                  onChange={e => setAbout(e.target.value)}
+                  placeholder="Describe your specialization, approach, and what you help clients with..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all resize-none"
+                />
+              </div>
+
+              <div className="flex items-start justify-between p-4 bg-brand-50 border border-brand-100 rounded-2xl gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 p-2 bg-brand-100 rounded-xl">
+                    <Users size={16} className="text-brand-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">Act as Peer Group Moderator</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      By enabling this, you consent to being assigned as a moderator in peer support groups. You can opt out at any time.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsModerator(v => !v)}
+                  className={`shrink-0 w-12 h-6 rounded-full p-1 transition-colors duration-200 ${isModerator ? 'bg-brand-500' : 'bg-slate-300'}`}
+                  aria-pressed={isModerator}
+                  aria-label="Toggle moderator consent"
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${isModerator ? 'translate-x-6' : 'translate-x-0'}`} />
+                </button>
               </div>
             </div>
           </div>

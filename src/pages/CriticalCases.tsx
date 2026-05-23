@@ -267,10 +267,6 @@ export default function CriticalCases() {
           </h1>
           <p className="text-slate-500 mt-1">High-risk users requiring immediate advisor review.</p>
         </div>
-        <button className="px-6 py-3 bg-brand-500 text-white rounded-2xl font-bold shadow-lg shadow-brand-200 hover:bg-brand-600 transition-all flex items-center gap-2 self-start">
-          <PlusCircle size={20} />
-          New Intervention
-        </button>
       </header>
 
       {/* ── Advisor Connection Requests ── */}
