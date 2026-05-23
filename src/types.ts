@@ -181,6 +181,4 @@ export interface Resource {
   authorId: string;
   authorImageUrl?: string;
   createdAt: string;
-  likeCount?: number;
-  viewCount?: number;
 }

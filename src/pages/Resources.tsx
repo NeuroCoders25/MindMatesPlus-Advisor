@@ -271,8 +271,7 @@ export default function Resources() {
         author: advisorProfile.name,
         authorId: currentUser.uid,
         authorImageUrl: advisorProfile.profileImageUrl || '',
-        ...(newResource.type === 'image' ? { image_url: imageUrl || "" } : {}),
-        ...(!editingResource ? { likeCount: 0, viewCount: 0 } : {})
+        ...(newResource.type === 'image' ? { image_url: imageUrl || "" } : {})
       };
 
       if (editingResource) {
@@ -466,17 +465,6 @@ export default function Resources() {
                     <span className="px-3 py-1 bg-brand-50 text-brand-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
                       {resource.category}
                     </span>
-                  </div>
-
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="flex items-center gap-1.5 text-slate-400">
-                      <Heart size={14} className="text-red-400" />
-                      <span className="text-xs font-semibold">{resource.likeCount ?? 0}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-slate-400">
-                      <MessageCircle size={14} className="text-brand-400" />
-                      <span className="text-xs font-semibold">{resource.viewCount ?? 0}</span>
-                    </div>
                   </div>
 
                   <div className="pt-6 border-t border-slate-50 flex items-center justify-between">
