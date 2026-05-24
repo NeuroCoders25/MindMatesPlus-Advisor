@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { User, Upload, Loader2, CheckCircle, XCircle, Users, Save } from 'lucide-react';
+import { User, Upload, Loader2, CheckCircle, XCircle, Users, Save, Pencil } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -18,6 +18,7 @@ function getInitials(name: string) {
 export default function AdvisorProfile() {
   const { advisorProfile, currentUser, updateAdvisorProfile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isEditing, setIsEditing] = useState(false);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -90,6 +91,7 @@ export default function AdvisorProfile() {
       return;
     }
     setIsUploading(false);
+    setIsEditing(false);
     showToast('success', 'Profile saved successfully');
   }
 
@@ -102,8 +104,12 @@ export default function AdvisorProfile() {
     setQualifications(advisorProfile?.qualifications ?? '');
     setAbout(advisorProfile?.about ?? '');
     setIsModerator(advisorProfile?.isModerator ?? false);
+    setIsEditing(false);
     showToast('discard', 'Changes discarded');
   }
+
+  const readOnlyInputClass = 'w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 text-sm text-slate-700 select-none cursor-default';
+  const editableInputClass = 'w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all';
 
   return (
     <motion.div
@@ -130,12 +136,25 @@ export default function AdvisorProfile() {
         )}
       </AnimatePresence>
 
-      <header>
-        <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
-          <User className="text-brand-500" size={32} />
-          Advisor Profile
-        </h1>
-        <p className="text-slate-500 mt-1">Manage your personal profile, credentials, and moderator settings.</p>
+      <header className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
+            <User className="text-brand-500" size={32} />
+            Advisor Profile
+          </h1>
+          <p className="text-slate-500 mt-1">
+            {isEditing ? 'Edit your personal profile, credentials, and moderator settings.' : 'Your personal profile, credentials, and moderator settings.'}
+          </p>
+        </div>
+        {!isEditing && (
+          <button
+            onClick={() => setIsEditing(true)}
+            className="flex items-center gap-2 px-5 py-2.5 bg-brand-500 text-white rounded-2xl font-bold shadow-lg shadow-brand-200 hover:bg-brand-600 transition-all text-sm"
+          >
+            <Pencil size={16} />
+            Edit Profile
+          </button>
+        )}
       </header>
 
       <div className="glass-card p-8">
@@ -160,41 +179,58 @@ export default function AdvisorProfile() {
                 </div>
               )}
             </div>
-            <div className="flex flex-col gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handlePhotoChange}
-              />
-              <button
-                type="button"
-                disabled={isUploading}
-                onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 disabled:opacity-50 transition-colors flex items-center gap-2"
-              >
-                <Upload size={14} />
-                Change Photo
-              </button>
-              {photoError && <p className="text-xs text-red-500">{photoError}</p>}
-            </div>
+            {isEditing && (
+              <div className="flex flex-col gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handlePhotoChange}
+                />
+                <button
+                  type="button"
+                  disabled={isUploading}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 disabled:opacity-50 transition-colors flex items-center gap-2"
+                >
+                  <Upload size={14} />
+                  Change Photo
+                </button>
+                {photoError && <p className="text-xs text-red-500">{photoError}</p>}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Full Name</label>
-              <input type="text" defaultValue={name} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all" />
+              <input
+                type="text"
+                defaultValue={name}
+                readOnly
+                className={readOnlyInputClass}
+              />
             </div>
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Title</label>
-              <input type="text" defaultValue={role} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all" />
+              <input
+                type="text"
+                defaultValue={role}
+                readOnly
+                className={readOnlyInputClass}
+              />
             </div>
           </div>
 
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Email Address</label>
-            <input type="email" defaultValue={email} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all" />
+            <input
+              type="email"
+              defaultValue={email}
+              readOnly
+              className={readOnlyInputClass}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -205,9 +241,10 @@ export default function AdvisorProfile() {
                 min={0}
                 max={60}
                 value={yearsOfExperience}
-                onChange={e => setYearsOfExperience(e.target.value)}
-                placeholder="e.g. 5"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all"
+                onChange={e => isEditing && setYearsOfExperience(e.target.value)}
+                readOnly={!isEditing}
+                placeholder={isEditing ? 'e.g. 5' : '—'}
+                className={isEditing ? editableInputClass : readOnlyInputClass}
               />
             </div>
             <div className="space-y-2">
@@ -215,9 +252,10 @@ export default function AdvisorProfile() {
               <input
                 type="text"
                 value={qualifications}
-                onChange={e => setQualifications(e.target.value)}
-                placeholder="e.g. MSc Psychology, CBT Certified"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all"
+                onChange={e => isEditing && setQualifications(e.target.value)}
+                readOnly={!isEditing}
+                placeholder={isEditing ? 'e.g. MSc Psychology, CBT Certified' : '—'}
+                className={isEditing ? editableInputClass : readOnlyInputClass}
               />
             </div>
           </div>
@@ -227,13 +265,14 @@ export default function AdvisorProfile() {
             <textarea
               rows={4}
               value={about}
-              onChange={e => setAbout(e.target.value)}
-              placeholder="Describe your specialization, approach, and what you help clients with..."
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all resize-none"
+              onChange={e => isEditing && setAbout(e.target.value)}
+              readOnly={!isEditing}
+              placeholder={isEditing ? 'Describe your specialization, approach, and what you help clients with...' : '—'}
+              className={`${isEditing ? editableInputClass : readOnlyInputClass} resize-none`}
             />
           </div>
 
-          <div className="flex items-start justify-between p-4 bg-brand-50 border border-brand-100 rounded-2xl gap-4">
+          <div className={`flex items-start justify-between p-4 bg-brand-50 border border-brand-100 rounded-2xl gap-4 ${!isEditing ? 'opacity-75' : ''}`}>
             <div className="flex items-start gap-3">
               <div className="mt-0.5 p-2 bg-brand-100 rounded-xl">
                 <Users size={16} className="text-brand-600" />
@@ -247,8 +286,9 @@ export default function AdvisorProfile() {
             </div>
             <button
               type="button"
-              onClick={() => setIsModerator(v => !v)}
-              className={`shrink-0 w-12 h-6 rounded-full p-1 transition-colors duration-200 ${isModerator ? 'bg-brand-500' : 'bg-slate-300'}`}
+              onClick={() => isEditing && setIsModerator(v => !v)}
+              disabled={!isEditing}
+              className={`shrink-0 w-12 h-6 rounded-full p-1 transition-colors duration-200 ${isModerator ? 'bg-brand-500' : 'bg-slate-300'} ${!isEditing ? 'cursor-default' : ''}`}
               aria-pressed={isModerator}
               aria-label="Toggle moderator consent"
             >
@@ -258,22 +298,32 @@ export default function AdvisorProfile() {
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-3">
-        <button
-          onClick={handleDiscard}
-          className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors"
-        >
-          Discard Changes
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={isUploading}
-          className="px-8 py-3 bg-brand-500 text-white rounded-2xl font-bold shadow-lg shadow-brand-200 hover:bg-brand-600 disabled:opacity-50 transition-all flex items-center gap-2"
-        >
-          {isUploading ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
-          {isUploading ? 'Saving...' : 'Save Profile'}
-        </button>
-      </div>
+      <AnimatePresence>
+        {isEditing && (
+          <motion.div
+            key="edit-actions"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            className="flex items-center justify-end gap-3"
+          >
+            <button
+              onClick={handleDiscard}
+              className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              Discard Changes
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isUploading}
+              className="px-8 py-3 bg-brand-500 text-white rounded-2xl font-bold shadow-lg shadow-brand-200 hover:bg-brand-600 disabled:opacity-50 transition-all flex items-center gap-2"
+            >
+              {isUploading ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
+              {isUploading ? 'Saving...' : 'Save Profile'}
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
