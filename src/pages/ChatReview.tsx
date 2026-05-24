@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  MessageSquare, Search, Users, Wifi, WifiOff, RefreshCw,
-  AlertTriangle, CheckCircle, FileText, X, XCircle, Send, Loader2, Lock, Save,
+  MessageSquare, Search, Users, RefreshCw,
+  AlertTriangle, CheckCircle, X, XCircle, Send, Loader2, Lock,
 } from 'lucide-react';
 import ChatViewer from '../components/ChatViewer';
 import { PeerGroup, LiveChatMessage, AdvisorPrivateMessage } from '../types';
@@ -423,7 +423,7 @@ export default function ChatReview() {
       )}
 
       <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
-        {/* Group list */}
+        {/* ── Group list ──────────────────────────────────────────────── */}
         <div className="w-72 shrink-0 glass-card flex flex-col overflow-hidden">
           <div className="p-4 border-b border-slate-100">
             <div className="relative">
@@ -604,7 +604,8 @@ export default function ChatReview() {
           )}
         </div>
 
-        {/* Flagged message action panel */}
+
+        {/* ── Flagged message action panel ─────────────────────────── */}
         <AnimatePresence>
           {selectedFlaggedMsg && (
             <motion.div
@@ -867,6 +868,7 @@ export default function ChatReview() {
           )}
         </AnimatePresence>
       </div>
+
     </motion.div>
   );
 }

@@ -109,21 +109,23 @@ export default function SignUp() {
 
             {/* ── Profile Photo ── */}
             <div className="flex flex-col items-center gap-2 pb-2">
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="relative w-20 h-20 rounded-full bg-slate-100 border-2 border-dashed border-slate-300 hover:border-brand-400 overflow-hidden transition-colors focus:outline-none focus:ring-4 focus:ring-brand-50"
-                aria-label="Upload profile photo"
-              >
-                {profilePreview ? (
-                  <img src={profilePreview} alt="Profile preview" className="w-full h-full object-cover" />
-                ) : (
-                  <Camera size={24} className="text-slate-400 mx-auto" />
-                )}
-                <div className="absolute bottom-0 right-0 w-6 h-6 bg-brand-500 rounded-full flex items-center justify-center shadow-md">
+              <div className="relative w-20 h-20">
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="w-full h-full rounded-full bg-slate-100 border-2 border-dashed border-slate-300 hover:border-brand-400 overflow-hidden transition-colors focus:outline-none focus:ring-4 focus:ring-brand-50"
+                  aria-label="Upload profile photo"
+                >
+                  {profilePreview ? (
+                    <img src={profilePreview} alt="Profile preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <Camera size={24} className="text-slate-400 mx-auto" />
+                  )}
+                </button>
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-brand-500 rounded-full flex items-center justify-center shadow-md pointer-events-none">
                   <span className="text-white text-xs font-bold leading-none">+</span>
                 </div>
-              </button>
+              </div>
               <input
                 ref={fileRef}
                 type="file"

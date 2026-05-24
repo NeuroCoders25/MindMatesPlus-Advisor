@@ -9,7 +9,8 @@ import {
   BarChart3,
   FileText,
   Settings,
-  Library
+  Library,
+  Video,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import logo from '../assets/logo.png';
@@ -20,6 +21,7 @@ const navItems = [
   { icon: AlertTriangle, label: 'Critical Cases', path: '/critical-cases' },
   { icon: Users, label: 'User Monitoring', path: '/monitoring' },
   { icon: MessageSquare, label: 'Chat Monitoring', path: '/chat-review' },
+  { icon: Video, label: 'Group Calls', path: '/calls' },
   { icon: BookOpen, label: 'Journal Review', path: '/journal-review' },
   { icon: Library, label: 'Resources', path: '/resources' },
   { icon: BarChart3, label: 'AI Insights', path: '/insights' },
