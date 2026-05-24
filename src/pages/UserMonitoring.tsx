@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, Search, Download } from 'lucide-react';
 import UserTable from '../components/UserTable';
 import UserDetailsModal from '../components/UserDetailsModal';
+import UserDetailPanel from '../components/UserDetailPanel';
 import { motion } from 'motion/react';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
@@ -54,6 +55,20 @@ function toTimestamp(value: unknown): number {
   return isNaN(d.getTime()) ? 0 : d.getTime();
 }
 
+function resolveActivityTimestamp(data: Record<string, unknown>, profile: Record<string, unknown>): unknown {
+  return (
+    data.lastActivity ??
+    data.lastActive ??
+    data.last_active ??
+    data.lastSeen ??
+    data.updatedAt ??
+    (data.mlMentalHealthProfile as Record<string, unknown> | undefined)?.lastUpdated ??
+    profile.lastUpdated ??
+    profile.knnLastUpdatedAt ??
+    data.createdAt
+  );
+}
+
 function parseUser(id: string, data: Record<string, unknown>, profile: Record<string, unknown>): User {
   const iqScore = profile.initialQuestionnaireScore as Record<string, unknown> | undefined;
   const rawRisk =
@@ -68,13 +83,12 @@ function parseUser(id: string, data: Record<string, unknown>, profile: Record<st
   const riskLevel = normalizeRiskLevel(rawRisk);
   const rawStatus =
     data.status ?? (riskLevel === 'High' || riskLevel === 'Critical' ? 'Monitoring' : 'Active');
-  const rawActivity = data.lastActivity ?? data.last_active ?? data.lastSeen ?? data.updatedAt;
   return {
     id,
     name: (data.nickname ?? data.nickName ?? data.name ?? data.displayName ?? data.userName ?? data.fullName ?? 'Unknown') as string,
     riskLevel,
     status: normalizeStatus(rawStatus),
-    lastActivity: toRelativeTime(rawActivity),
+    lastActivity: toRelativeTime(resolveActivityTimestamp(data, profile)),
   };
 }
 
@@ -84,10 +98,11 @@ export default function UserMonitoring() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('Risk Level');
+  const [sortBy, setSortBy] = useState('Last Activity');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -107,8 +122,7 @@ export default function UserMonitoring() {
           const parsed = snap.docs.map((d) => {
             const data = d.data() as Record<string, unknown>;
             const profile = profileMap.get(d.id) ?? {};
-            const rawActivity = data.lastActivity ?? data.last_active ?? data.lastSeen ?? data.updatedAt;
-            tsMap.set(d.id, toTimestamp(rawActivity));
+            tsMap.set(d.id, toTimestamp(resolveActivityTimestamp(data, profile)));
             return parseUser(d.id, data, profile);
           });
           setUsers(parsed);
@@ -240,8 +254,8 @@ export default function UserMonitoring() {
             }}
             className="bg-slate-100 text-slate-600 rounded-xl text-sm font-semibold px-4 py-2 outline-none border-none"
           >
-            <option value="Risk Level">Sort by: Risk Level</option>
             <option value="Last Activity">Sort by: Last Activity</option>
+            <option value="Risk Level">Sort by: Risk Level</option>
             <option value="Name">Sort by: Name</option>
           </select>
         </div>
@@ -252,8 +266,7 @@ export default function UserMonitoring() {
           <UserTable
             users={paginated}
             onViewDetails={(u) => {
-              setSelectedUser(u);
-              setIsDetailsModalOpen(true);
+              setSelectedUserId(u.id);
             }}
           />
         )}
@@ -292,6 +305,12 @@ export default function UserMonitoring() {
           riskLevel={selectedUser.riskLevel}
         />
       )}
+
+      {/* Mental Health Detail Panel — slides in from the right */}
+      <UserDetailPanel
+        userId={selectedUserId}
+        onClose={() => setSelectedUserId(null)}
+      />
     </motion.div>
   );
 }

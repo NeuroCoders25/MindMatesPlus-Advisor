@@ -184,3 +184,12 @@ export interface Resource {
   authorImageUrl?: string;
   createdAt: string;
 }
+
+export interface FlaggedAlert {
+  id: string;
+  source: 'group-chat' | 'ai-chat' | 'journal';
+  senderName: string;
+  snippet: string;
+  timestamp: Date;
+  navPath: string;
+}

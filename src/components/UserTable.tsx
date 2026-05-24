@@ -24,7 +24,11 @@ export default function UserTable({ users, onViewDetails }: UserTableProps) {
         </thead>
         <tbody className="divide-y divide-slate-50">
           {users.map((user) => (
-            <tr key={user.id} className="hover:bg-slate-50/50 transition-colors group">
+            <tr
+              key={user.id}
+              className="hover:bg-brand-50/40 transition-colors group cursor-pointer"
+              onClick={() => onViewDetails?.(user)}
+            >
               <td className="px-6 py-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-medium border border-slate-200">
@@ -43,7 +47,7 @@ export default function UserTable({ users, onViewDetails }: UserTableProps) {
                 <div className="flex items-center gap-2">
                   <span className={cn(
                     "w-2 h-2 rounded-full",
-                    user.status === 'Active' ? 'bg-emerald-500' : 
+                    user.status === 'Active' ? 'bg-emerald-500' :
                     user.status === 'Monitoring' ? 'bg-amber-500' : 'bg-slate-300'
                   )}></span>
                   <span className="text-sm text-slate-600">{user.status}</span>
@@ -55,12 +59,15 @@ export default function UserTable({ users, onViewDetails }: UserTableProps) {
               <td className="px-6 py-4 text-right">
                 <div className="flex items-center justify-end gap-2">
                   <button
-                    onClick={() => onViewDetails?.(user)}
+                    onClick={(e) => { e.stopPropagation(); onViewDetails?.(user); }}
                     className="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-all"
                   >
                     <ExternalLink size={18} />
                   </button>
-                  <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
+                  <button
+                    onClick={(e) => e.stopPropagation()}
+                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
+                  >
                     <MoreVertical size={18} />
                   </button>
                 </div>

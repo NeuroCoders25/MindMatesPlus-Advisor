@@ -11,7 +11,10 @@ export default function Navbar() {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => subscribeAlertCount(setAlertCount), []);
+  useEffect(() => {
+    const unsub = subscribeAlertCount(setAlertCount);
+    return () => { unsub(); };
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
