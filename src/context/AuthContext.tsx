@@ -25,7 +25,7 @@ interface AuthContextType {
   currentUser: User | null;
   advisorProfile: AdvisorProfile | null;
   loading: boolean;
-  signup: (email: string, password: string, name: string, role: string) => Promise<void>;
+  signup: (email: string, password: string, name: string, role: string, extra?: { yearsOfExperience?: number; qualifications?: string; about?: string; isModerator?: boolean; profileImageUrl?: string }) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [advisorProfile, setAdvisorProfile] = useState<AdvisorProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function signup(email: string, password: string, name: string, role: string) {
+  async function signup(email: string, password: string, name: string, role: string, extra?: { yearsOfExperience?: number; qualifications?: string; about?: string; isModerator?: boolean; profileImageUrl?: string }) {
     const { user } = await createUserWithEmailAndPassword(auth, email, password);
     await setDoc(doc(db, 'advisors', user.uid), {
       uid: user.uid,
@@ -53,8 +53,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       role,
       createdAt: new Date().toISOString(),
+      yearsOfExperience: extra?.yearsOfExperience,
+      qualifications: extra?.qualifications ?? '',
+      about: extra?.about ?? '',
+      isModerator: extra?.isModerator ?? false,
+      profileImageUrl: extra?.profileImageUrl ?? '',
     });
-    setAdvisorProfile({ name, role, email });
+    setAdvisorProfile({ name, role, email, yearsOfExperience: extra?.yearsOfExperience, qualifications: extra?.qualifications ?? '', about: extra?.about ?? '', isModerator: extra?.isModerator ?? false, profileImageUrl: extra?.profileImageUrl ?? '' });
   }
 
   async function login(email: string, password: string) {
