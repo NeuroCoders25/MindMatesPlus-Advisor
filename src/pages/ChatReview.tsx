@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   MessageSquare, Search, Users, RefreshCw,
   AlertTriangle, CheckCircle, X, XCircle, Send, Loader2, Lock,
+  Sparkles, ShieldAlert, Brain,
 } from 'lucide-react';
 import ChatViewer from '../components/ChatViewer';
 import { PeerGroup, LiveChatMessage, AdvisorPrivateMessage } from '../types';
@@ -20,11 +21,25 @@ import {
   updateDoc,
   addDoc,
   serverTimestamp,
+  limit,
 } from 'firebase/firestore';
+import {
+  generateGroupSummary,
+  detectConflict,
+  generateAIPrivateReply,
+} from '../lib/groq';
 
 const GROUPS_COLLECTION = 'peer_groups';
 const MESSAGES_SUBCOLLECTION = 'chatMessages';
 const PRIVATE_THREAD_SUBCOLLECTION = 'privateThread';
+
+// Keyword pre-filter before calling the AI — avoids unnecessary API calls
+const CONFLICT_KEYWORDS = [
+  'hate you', 'shut up', 'kill yourself', 'kys', 'idiot', 'loser',
+  'worthless', 'go away', 'you\'re stupid', 'you are stupid', 'nobody cares',
+  'fight me', 'i hate', 'stop talking', 'you\'re annoying', 'you are annoying',
+  'nobody likes', 'leave me alone', 'freak', 'pathetic',
+];
 
 function toDate(value: unknown): Date | null {
   if (!value) return null;
@@ -70,6 +85,14 @@ function parsePrivateMessage(id: string, data: Record<string, unknown>): Advisor
   };
 }
 
+interface ConflictAlert {
+  id: string;
+  severity: 'medium' | 'high';
+  reason: string;
+  triggerMessageText: string;
+  detectedAt: Date | null;
+}
+
 export default function ChatReview() {
   const { currentUser, advisorProfile } = useAuth();
 
@@ -82,7 +105,7 @@ export default function ChatReview() {
   const [connected, setConnected] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Flagged message panel state
+  // Flagged message panel
   const [selectedFlaggedMsg, setSelectedFlaggedMsg] = useState<LiveChatMessage | null>(null);
   const [panelTab, setPanelTab] = useState<'actions' | 'chat'>('actions');
   const [noteText, setNoteText] = useState('');
@@ -97,8 +120,23 @@ export default function ChatReview() {
   const [publicMessageText, setPublicMessageText] = useState('');
   const [sendingPublicMessage, setSendingPublicMessage] = useState(false);
   const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
-
   const [flaggedCounts, setFlaggedCounts] = useState<Record<string, number>>({});
+
+  // ── AI: Feature 2 — Chat summary ──────────────────────────────────────────
+  const [summary, setSummary] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryVisible, setSummaryVisible] = useState(false);
+
+  // ── AI: Feature 3 — Conflict alerts ───────────────────────────────────────
+  const [conflictAlerts, setConflictAlerts] = useState<ConflictAlert[]>([]);
+
+  // ── AI: Feature 1 — Suggested private reply ───────────────────────────────
+  const [aiReplyLoading, setAiReplyLoading] = useState(false);
+  const [aiReplySuggestion, setAiReplySuggestion] = useState<string | null>(null);
+
+  // Tracks which message IDs we've already run conflict detection on
+  const lastCheckedMsgRef = useRef<Set<string>>(new Set());
+  const conflictInitializedRef = useRef(false);
 
   const privateMsgsEndRef = useRef<HTMLDivElement>(null);
 
@@ -106,13 +144,20 @@ export default function ChatReview() {
     privateMsgsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [privateMessages]);
 
-  // Subscribe to pending flagged message counts for all groups
+  // Reset all AI state when group changes
+  useEffect(() => {
+    lastCheckedMsgRef.current = new Set();
+    conflictInitializedRef.current = false;
+    setSummary(null);
+    setSummaryVisible(false);
+    setAiReplySuggestion(null);
+  }, [selectedGroup?.id]);
+
+  // Pending flagged counts badge for group list
   useEffect(() => {
     if (groups.length === 0) return;
-
     const unsubscribes = groups.map((group) => {
       const messagesRef = collection(db, GROUPS_COLLECTION, group.id, MESSAGES_SUBCOLLECTION);
-
       return onSnapshot(query(messagesRef), (snap) => {
         const count = snap.docs.filter(d => {
           const data = d.data();
@@ -125,11 +170,10 @@ export default function ChatReview() {
         setFlaggedCounts(prev => ({ ...prev, [group.id]: count }));
       }, () => {});
     });
-
     return () => unsubscribes.forEach(unsub => unsub());
   }, [groups]);
 
-  // Fetch peer groups — only those where group_moderator matches the logged-in advisor's name
+  // Fetch peer groups assigned to this advisor
   useEffect(() => {
     setLoadingGroups(true);
     const unsubscribe = onSnapshot(
@@ -163,7 +207,7 @@ export default function ChatReview() {
         setError('Could not load groups. Check Firestore permissions.');
         setConnected(false);
         setLoadingGroups(false);
-      }
+      },
     );
     return () => unsubscribe();
   }, [advisorProfile?.name]);
@@ -171,7 +215,6 @@ export default function ChatReview() {
   // Real-time messages listener
   useEffect(() => {
     if (!selectedGroup) return;
-
     setLoadingMessages(true);
     setMessages([]);
     setSelectedFlaggedMsg(null);
@@ -186,7 +229,6 @@ export default function ChatReview() {
           parseMessage(doc.id, doc.data() as Record<string, unknown>)
         );
         setMessages(fetched);
-        // Sync selected flagged msg if it was updated
         setSelectedFlaggedMsg(prev => {
           if (!prev) return null;
           return fetched.find(m => m.id === prev.id) ?? prev;
@@ -203,21 +245,17 @@ export default function ChatReview() {
           .catch(() => setError('Could not load messages.'));
         setLoadingMessages(false);
         setConnected(false);
-      }
+      },
     );
-
     return () => unsubscribe();
   }, [selectedGroup?.id]);
 
-  // Private messages listener for the flagged message panel.
-  // Path: peer_groups/{groupId}/chatMessages/{flaggedMessageId}/privateThread
-  // Only the advisor and the flagged-message sender can see these (enforced via visibleTo).
+  // Private thread listener for the flagged message panel
   useEffect(() => {
     if (!selectedFlaggedMsg || !selectedGroup || !currentUser) {
       setPrivateMessages([]);
       return;
     }
-
     const q = query(
       collection(
         db,
@@ -227,7 +265,6 @@ export default function ChatReview() {
       ),
       orderBy('timestamp', 'asc'),
     );
-
     const unsubscribe = onSnapshot(q, (snap) => {
       setPrivateMessages(
         snap.docs.map(d => parsePrivateMessage(d.id, d.data() as Record<string, unknown>))
@@ -235,9 +272,88 @@ export default function ChatReview() {
     }, (err) => {
       console.error('Error fetching private thread:', err);
     });
-
     return () => unsubscribe();
   }, [selectedFlaggedMsg?.id, selectedGroup?.id, currentUser?.uid]);
+
+  // ── Feature 3: Conflict alert Firestore listener ──────────────────────────
+  useEffect(() => {
+    if (!selectedGroup) {
+      setConflictAlerts([]);
+      return;
+    }
+    const q = query(
+      collection(db, GROUPS_COLLECTION, selectedGroup.id, 'conflictAlerts'),
+      orderBy('detectedAt', 'desc'),
+      limit(10),
+    );
+    const unsub = onSnapshot(q, snap => {
+      setConflictAlerts(
+        snap.docs
+          .map(d => {
+            const data = d.data() as Record<string, unknown>;
+            return {
+              id: d.id,
+              severity: (data.severity as 'medium' | 'high') ?? 'medium',
+              reason: (data.reason as string) ?? '',
+              triggerMessageText: (data.triggerMessageText as string) ?? '',
+              detectedAt: toDate(data.detectedAt),
+              status: (data.status as string) ?? 'pending',
+            };
+          })
+          .filter(a => a.status === 'pending')
+          .slice(0, 3) as ConflictAlert[],
+      );
+    }, err => console.error('Conflict alerts listener error:', err));
+    return () => unsub();
+  }, [selectedGroup?.id]);
+
+  // ── Feature 3: Real-time conflict detection on new messages ───────────────
+  useEffect(() => {
+    if (!selectedGroup || messages.length === 0) return;
+
+    // First run after group load: seed the checked set, don't analyze old messages
+    if (!conflictInitializedRef.current) {
+      messages.forEach(m => lastCheckedMsgRef.current.add(m.id));
+      conflictInitializedRef.current = true;
+      return;
+    }
+
+    // Find messages that arrived after the initial load
+    const unchecked = messages.filter(
+      m => !lastCheckedMsgRef.current.has(m.id) && m.text.trim() !== '' && !m.deletedByAdvisor,
+    );
+    if (unchecked.length === 0) return;
+
+    // Mark all as seen immediately to prevent duplicate checks
+    unchecked.forEach(m => lastCheckedMsgRef.current.add(m.id));
+
+    // Only run AI on the most recent new message to limit API calls
+    const latest = unchecked[unchecked.length - 1];
+    const lower = latest.text.toLowerCase();
+    if (!CONFLICT_KEYWORDS.some(k => lower.includes(k))) return;
+
+    const context = messages.slice(-7, -1).map(m => ({ senderName: m.senderName, text: m.text }));
+
+    detectConflict(context, { senderName: latest.senderName, text: latest.text })
+      .then(result => {
+        if (!result.isConflict || result.severity === 'low') return;
+        return addDoc(
+          collection(db, GROUPS_COLLECTION, selectedGroup.id, 'conflictAlerts'),
+          {
+            severity: result.severity,
+            reason: result.reason,
+            triggerMessageId: latest.id,
+            triggerMessageText: latest.text,
+            detectedAt: serverTimestamp(),
+            status: 'pending',
+          },
+        );
+      })
+      .catch(err => console.error('Conflict detection error:', err));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, selectedGroup?.id]);
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleFlaggedMessageClick = (msg: LiveChatMessage) => {
     if (selectedFlaggedMsg?.id === msg.id) {
@@ -249,6 +365,7 @@ export default function ChatReview() {
     setNoteText(msg.advisorNote ?? '');
     setReplyText('');
     setRejectionReasonText('');
+    setAiReplySuggestion(null);
   };
 
   const handleApprove = async () => {
@@ -307,9 +424,6 @@ export default function ChatReview() {
     }
   };
 
-  // Sends a private message from the advisor to the flagged-message author.
-  // Stored under: peer_groups/{groupId}/chatMessages/{flaggedMessageId}/privateThread
-  // Does NOT touch the main chatMessages collection or broadcast to group listeners.
   const handleSendPrivateReply = async () => {
     if (!replyText.trim() || !selectedFlaggedMsg || !selectedGroup || !currentUser) return;
     setReplySending(true);
@@ -320,25 +434,19 @@ export default function ChatReview() {
         MESSAGES_SUBCOLLECTION, selectedFlaggedMsg.id,
         PRIVATE_THREAD_SUBCOLLECTION,
       );
-
       await addDoc(privateThreadRef, {
-        // Sender — always the advisor here
-        senderId:   currentUser.uid,
-        senderName: advisorProfile?.name ?? 'Advisor',
-        senderRole: 'advisor',
-        // Recipient — the user who sent the flagged message
-        receiverId:   selectedFlaggedMsg.senderId,
-        receiverName: selectedFlaggedMsg.senderName,
-        // Content
-        text:      replyText.trim(),
-        timestamp: serverTimestamp(),
-        // Thread metadata
-        isPrivate:          true,
-        threadType:         'advisor_private_reply',
-        flaggedMessageRef:  selectedFlaggedMsg.id,
-        visibleTo: [currentUser.uid, selectedFlaggedMsg.senderId],
+        senderId:          currentUser.uid,
+        senderName:        advisorProfile?.name ?? 'Advisor',
+        senderRole:        'advisor',
+        receiverId:        selectedFlaggedMsg.senderId,
+        receiverName:      selectedFlaggedMsg.senderName,
+        text:              replyText.trim(),
+        timestamp:         serverTimestamp(),
+        isPrivate:         true,
+        threadType:        'advisor_private_reply',
+        flaggedMessageRef: selectedFlaggedMsg.id,
+        visibleTo:         [currentUser.uid, selectedFlaggedMsg.senderId],
       });
-
       setReplyText('');
     } catch (err) {
       console.error('Error sending private reply:', err);
@@ -353,11 +461,11 @@ export default function ChatReview() {
     try {
       const messagesRef = collection(db, GROUPS_COLLECTION, selectedGroup.id, MESSAGES_SUBCOLLECTION);
       await addDoc(messagesRef, {
-        senderId: currentUser.uid,
+        senderId:   currentUser.uid,
         senderName: advisorProfile?.name ?? 'Advisor',
-        text: publicMessageText.trim(),
-        timestamp: serverTimestamp(),
-        isFlagged: false,
+        text:       publicMessageText.trim(),
+        timestamp:  serverTimestamp(),
+        isFlagged:  false,
       });
       setPublicMessageText('');
     } catch (err) {
@@ -374,9 +482,9 @@ export default function ChatReview() {
     try {
       const msgRef = doc(db, GROUPS_COLLECTION, selectedGroup.id, MESSAGES_SUBCOLLECTION, msg.id);
       await updateDoc(msgRef, {
-        deletedByAdvisor: true,
+        deletedByAdvisor:     true,
         deletedByAdvisorName: advisorProfile?.name ?? 'Advisor',
-        deletedByAdvisorAt: serverTimestamp(),
+        deletedByAdvisorAt:   serverTimestamp(),
       });
       if (selectedFlaggedMsg?.id === msg.id) setSelectedFlaggedMsg(null);
     } catch (err) {
@@ -386,9 +494,80 @@ export default function ChatReview() {
     }
   };
 
+  // ── AI handlers ───────────────────────────────────────────────────────────
+
+  const handleGenerateSummary = async () => {
+    if (!selectedGroup || messages.length === 0) return;
+    setSummaryLoading(true);
+    setSummaryVisible(true);
+    setSummary(null);
+    try {
+      const recentMsgs = messages
+        .filter(m => !m.deletedByAdvisor && m.text.trim() !== '')
+        .slice(-30)
+        .map(m => ({ senderName: m.senderName, text: m.text }));
+      const result = await generateGroupSummary(recentMsgs);
+      setSummary(result);
+      // Persist so advisor can review later
+      await addDoc(collection(db, GROUPS_COLLECTION, selectedGroup.id, 'chatSummaries'), {
+        content:      result,
+        generatedAt:  serverTimestamp(),
+        generatedBy:  'ai',
+        advisorId:    currentUser?.uid,
+        messageCount: recentMsgs.length,
+      });
+    } catch (err) {
+      console.error('Summary generation error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setSummary(`Error: ${msg}`);
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
+  const handleAISuggestReply = async () => {
+    if (!selectedFlaggedMsg) return;
+    setAiReplyLoading(true);
+    setAiReplySuggestion(null);
+    try {
+      const suggestion = await generateAIPrivateReply(
+        selectedFlaggedMsg.text,
+        selectedFlaggedMsg.senderName,
+      );
+      setAiReplySuggestion(suggestion);
+    } catch (err) {
+      console.error('AI reply suggestion error:', err);
+    } finally {
+      setAiReplyLoading(false);
+    }
+  };
+
+  const handleUseAISuggestion = () => {
+    if (!aiReplySuggestion) return;
+    setReplyText(aiReplySuggestion);
+    setPanelTab('chat');
+    setAiReplySuggestion(null);
+  };
+
+  const handleAcknowledgeConflict = async (alertId: string) => {
+    if (!selectedGroup) return;
+    try {
+      await updateDoc(
+        doc(db, GROUPS_COLLECTION, selectedGroup.id, 'conflictAlerts', alertId),
+        {
+          status:           'acknowledged',
+          acknowledgedBy:   currentUser?.uid,
+          acknowledgedAt:   serverTimestamp(),
+        },
+      );
+    } catch (err) {
+      console.error('Error acknowledging conflict:', err);
+    }
+  };
+
+  // ── Derived state ─────────────────────────────────────────────────────────
+
   const visibleMessages = messages.filter(msg => {
-    // Deleted messages are always shown so the "deleted by advisor" placeholder
-    // is visible to everyone in the thread, regardless of the review filter.
     if (msg.deletedByAdvisor) return true;
     if (!msg.isFlagged) return true;
     if (reviewFilter === 'all') return true;
@@ -399,6 +578,8 @@ export default function ChatReview() {
   const filteredGroups = groups.filter((g) =>
     g.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <motion.div
@@ -423,6 +604,7 @@ export default function ChatReview() {
       )}
 
       <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
+
         {/* ── Group list ──────────────────────────────────────────────── */}
         <div className="w-72 shrink-0 glass-card flex flex-col overflow-hidden">
           <div className="p-4 border-b border-slate-100">
@@ -485,10 +667,11 @@ export default function ChatReview() {
           </div>
         </div>
 
-        {/* Chat panel */}
+        {/* ── Chat panel ──────────────────────────────────────────────── */}
         <div className="flex-1 min-w-0 flex flex-col gap-4">
           {selectedGroup ? (
             <>
+              {/* Group header */}
               <div className="glass-card p-5 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-2xl bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-xl overflow-hidden">
@@ -521,15 +704,132 @@ export default function ChatReview() {
                       Reviewing flagged message
                     </span>
                   )}
+                  {/* Feature 2: AI Summary button */}
+                  <button
+                    onClick={handleGenerateSummary}
+                    disabled={summaryLoading || messages.length === 0}
+                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 bg-violet-50 text-violet-600 border border-violet-200 hover:bg-violet-100 rounded-xl transition-colors disabled:opacity-40"
+                  >
+                    {summaryLoading
+                      ? <Loader2 size={13} className="animate-spin" />
+                      : <Brain size={13} />
+                    }
+                    AI Summary
+                  </button>
                 </div>
               </div>
 
+              {/* Feature 2: AI Summary panel */}
+              <AnimatePresence>
+                {summaryVisible && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="glass-card overflow-hidden shrink-0"
+                  >
+                    <div className="p-4 border-b border-violet-100 bg-violet-50/50 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Brain size={15} className="text-violet-600" />
+                        <span className="text-sm font-bold text-violet-700">AI Chat Summary</span>
+                        {summaryLoading && <Loader2 size={12} className="animate-spin text-violet-400" />}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={handleGenerateSummary}
+                          disabled={summaryLoading || messages.length === 0}
+                          className="p-1.5 text-violet-400 hover:text-violet-600 hover:bg-violet-100 rounded-lg transition-colors disabled:opacity-40"
+                          title="Regenerate"
+                        >
+                          <RefreshCw size={13} />
+                        </button>
+                        <button
+                          onClick={() => setSummaryVisible(false)}
+                          className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="p-4">
+                      {summaryLoading && !summary ? (
+                        <div className="flex items-center gap-2 text-violet-400 text-sm">
+                          <Loader2 size={14} className="animate-spin" />
+                          Analysing the last {Math.min(messages.length, 30)} messages…
+                        </div>
+                      ) : summary ? (
+                        <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{summary}</p>
+                      ) : null}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Conversation card */}
               <div className="flex-1 glass-card flex flex-col overflow-hidden min-h-0">
                 <div className="p-6 pb-3 shrink-0">
                   <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
                     Conversation
                     {loadingMessages && <RefreshCw size={12} className="animate-spin text-slate-400" />}
                   </h4>
+
+                  {/* Feature 3: Conflict alert banners */}
+                  <AnimatePresence>
+                    {conflictAlerts.map(alert => (
+                      <motion.div
+                        key={alert.id}
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        className={cn(
+                          'mb-3 rounded-xl border px-3 py-2.5 flex items-start gap-2.5',
+                          alert.severity === 'high'
+                            ? 'bg-red-50 border-red-200'
+                            : 'bg-amber-50 border-amber-200',
+                        )}
+                      >
+                        <ShieldAlert
+                          size={14}
+                          className={cn(
+                            'mt-0.5 shrink-0',
+                            alert.severity === 'high' ? 'text-red-500' : 'text-amber-500',
+                          )}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={cn(
+                              'text-[10px] font-bold uppercase tracking-wide',
+                              alert.severity === 'high' ? 'text-red-600' : 'text-amber-600',
+                            )}>
+                              {alert.severity === 'high' ? 'High' : 'Medium'}-severity conflict detected
+                            </span>
+                            {alert.detectedAt && (
+                              <span className="text-[10px] text-slate-400">· {formatTime(alert.detectedAt)}</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-600 leading-snug">{alert.reason}</p>
+                          {alert.triggerMessageText && (
+                            <p className="text-[10px] text-slate-400 mt-1 truncate">
+                              Trigger: "{alert.triggerMessageText}"
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleAcknowledgeConflict(alert.id)}
+                          className={cn(
+                            'text-[10px] font-bold px-2 py-1 rounded-lg shrink-0 transition-colors',
+                            alert.severity === 'high'
+                              ? 'text-red-600 hover:bg-red-100'
+                              : 'text-amber-600 hover:bg-amber-100',
+                          )}
+                        >
+                          Acknowledge
+                        </button>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+
                   <div className="flex items-center gap-1.5 mb-2">
                     {(['pending', 'approved', 'rejected', 'all'] as const).map(f => (
                       <button
@@ -555,6 +855,7 @@ export default function ChatReview() {
                     </p>
                   )}
                 </div>
+
                 <div className="flex-1 px-6 min-h-0 overflow-hidden flex flex-col">
                   <ChatViewer
                     messages={visibleMessages}
@@ -564,6 +865,7 @@ export default function ChatReview() {
                     onDeleteMessage={handleDeleteMessage}
                   />
                 </div>
+
                 <div className="p-4 border-t border-slate-100 shrink-0">
                   <div className="flex gap-2 items-center">
                     <input
@@ -591,7 +893,8 @@ export default function ChatReview() {
                     </button>
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1.5">
-                    Visible to all group members · posting as <span className="font-semibold text-slate-500">{advisorProfile?.name ?? 'Advisor'}</span>
+                    Visible to all group members · posting as{' '}
+                    <span className="font-semibold text-slate-500">{advisorProfile?.name ?? 'Advisor'}</span>
                   </p>
                 </div>
               </div>
@@ -604,8 +907,7 @@ export default function ChatReview() {
           )}
         </div>
 
-
-        {/* ── Flagged message action panel ─────────────────────────── */}
+        {/* ── Flagged message action panel ─────────────────────────────── */}
         <AnimatePresence>
           {selectedFlaggedMsg && (
             <motion.div
@@ -691,6 +993,7 @@ export default function ChatReview() {
               {/* Actions tab */}
               {panelTab === 'actions' && (
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
                   {/* Review Status */}
                   <div className="bg-slate-50 rounded-2xl p-4">
                     <h6 className="text-xs font-bold text-slate-600 mb-3 flex items-center gap-1.5">
@@ -750,6 +1053,50 @@ export default function ChatReview() {
                     </p>
                   </div>
 
+                  {/* Feature 1: AI Assistance — suggest private reply */}
+                  <div className="bg-violet-50/60 border border-violet-100 rounded-2xl p-4">
+                    <h6 className="text-xs font-bold text-violet-700 mb-3 flex items-center gap-1.5">
+                      <Sparkles size={13} className="text-violet-500" />
+                      AI Assistance
+                    </h6>
+                    {aiReplySuggestion ? (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wide">Suggested reply</p>
+                        <div className="bg-white border border-violet-200 rounded-xl px-3 py-2.5">
+                          <p className="text-xs text-slate-700 leading-relaxed">{aiReplySuggestion}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleUseAISuggestion}
+                            className="flex-1 text-xs font-bold py-2 bg-violet-500 hover:bg-violet-600 text-white rounded-xl transition-colors"
+                          >
+                            Use This Reply
+                          </button>
+                          <button
+                            onClick={() => setAiReplySuggestion(null)}
+                            className="px-3 text-xs font-bold text-slate-400 hover:text-slate-600 border border-slate-200 rounded-xl transition-colors"
+                          >
+                            Discard
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleAISuggestReply}
+                        disabled={aiReplyLoading}
+                        className="w-full flex items-center justify-center gap-2 text-xs font-bold py-2.5 border border-violet-300 text-violet-600 hover:bg-violet-100 rounded-xl transition-colors disabled:opacity-50"
+                      >
+                        {aiReplyLoading
+                          ? <><Loader2 size={13} className="animate-spin" /> Generating…</>
+                          : <><Sparkles size={13} /> Suggest Private Reply</>
+                        }
+                      </button>
+                    )}
+                    <p className="text-[10px] text-slate-400 mt-2">
+                      AI drafts an empathetic reply. Review and edit before sending.
+                    </p>
+                  </div>
+
                 </div>
               )}
 
@@ -757,7 +1104,6 @@ export default function ChatReview() {
               {panelTab === 'chat' && (
                 <div className="flex-1 flex flex-col overflow-hidden">
 
-                  {/* Privacy notice */}
                   <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 shrink-0 flex items-center gap-1.5">
                     <Lock size={9} className="text-amber-600 shrink-0" />
                     <p className="text-[10px] text-amber-700">
@@ -767,7 +1113,6 @@ export default function ChatReview() {
                     </p>
                   </div>
 
-                  {/* Flagged message context reference */}
                   <div className="mx-3 mt-3 mb-1 shrink-0 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
                     <div className="flex items-center gap-1.5 mb-1">
                       <AlertTriangle size={10} className="text-red-500 shrink-0" />
@@ -786,7 +1131,6 @@ export default function ChatReview() {
                     </div>
                   </div>
 
-                  {/* Message thread */}
                   <div className="flex-1 overflow-y-auto px-3 pb-3 pt-2 space-y-3 bg-slate-50/50">
                     {privateMessages.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs gap-2 py-6">
@@ -830,7 +1174,6 @@ export default function ChatReview() {
                     <div ref={privateMsgsEndRef} />
                   </div>
 
-                  {/* Input area */}
                   <div className="p-3 border-t border-slate-100 bg-white shrink-0">
                     <div className="flex gap-2 items-center">
                       <input
@@ -868,7 +1211,6 @@ export default function ChatReview() {
           )}
         </AnimatePresence>
       </div>
-
     </motion.div>
   );
 }
