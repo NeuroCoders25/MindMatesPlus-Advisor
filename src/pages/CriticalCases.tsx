@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { AlertTriangle, Search, PlusCircle, Users, UserCheck } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { AlertTriangle, Search, Users, UserCheck } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useLocation } from 'react-router-dom';
 import CaseCard from '../components/CaseCard';
 import ConnectionCard from '../components/ConnectionCard';
 import NotesModal from '../components/NotesModal';
@@ -16,6 +17,37 @@ import {
   acceptAdvisorConnection,
   markCaseReviewed,
 } from '../lib/advisorConnections';
+
+// ── Backend alert processing (Part A) ─────────────────────────────────────────
+// Module-level Set persists for the entire browser session tab so we never call
+// the backend more than once per connectionId, even if the listener fires again.
+const _processedSessionIds = new Set<string>();
+
+const _API_BASE = import.meta.env.VITE_API_BASE_URL as string | undefined;
+
+async function processConnectionAlert(
+  connectionId: string,
+  getToken: () => Promise<string>,
+): Promise<void> {
+  if (!_API_BASE) {
+    console.warn('[CriticalCases] VITE_API_BASE_URL is not set — skipping backend alert processing');
+    return;
+  }
+  if (_processedSessionIds.has(connectionId)) return;
+  _processedSessionIds.add(connectionId);
+  try {
+    const token = await getToken();
+    const res = await fetch(
+      `${_API_BASE}/critical-alerts/process-advisor-connection/${connectionId}`,
+      { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) {
+      console.warn(`[CriticalCases] Backend returned ${res.status} for connection ${connectionId}`);
+    }
+  } catch (err) {
+    console.error('[CriticalCases] Failed to process connection alert:', connectionId, err);
+  }
+}
 
 function toDateString(value: unknown): string {
   if (value === null || value === undefined) return '—';
@@ -67,6 +99,31 @@ const RISK_ORDER: Record<Case['riskLevel'], number> = { Critical: 0, High: 1, Me
 
 export default function CriticalCases() {
   const { currentUser } = useAuth();
+  const location = useLocation();
+
+  // ── Alert-driven highlight ────────────────────────────────────────────────
+  // When the advisor clicks "Review Case" from a notification, connectionId is
+  // passed via route state (or ?connectionId= query param as fallback).
+  const [highlightedConnectionId, setHighlightedConnectionId] = useState<string | null>(null);
+
+  // Refs keyed by connection id — used to scroll the highlighted card into view
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const setCardRef = useCallback(
+    (id: string) => (el: HTMLDivElement | null) => {
+      if (el) cardRefs.current.set(id, el);
+      else cardRefs.current.delete(id);
+    },
+    [],
+  );
+
+  // Resolve highlight target from route state or query param
+  useEffect(() => {
+    const stateId = (location.state as { connectionId?: string } | null)?.connectionId;
+    const queryId = new URLSearchParams(location.search).get('connectionId');
+    const target = stateId ?? queryId ?? null;
+    setHighlightedConnectionId(target);
+  }, [location]);
 
   // Advisor connections state
   const [connections, setConnections] = useState<AdvisorConnection[]>([]);
@@ -107,6 +164,11 @@ export default function CriticalCases() {
         setConnections(conns);
         setConnectionsLoading(false);
         setConnectionsError(null);
+
+        // Trigger backend alert creation + email for each new pending connection
+        conns
+          .filter((c) => c.status === 'pending')
+          .forEach((c) => processConnectionAlert(c.id, () => currentUser.getIdToken()));
       },
       () => {
         setConnectionsError('Could not load connection requests. Check Firestore permissions.');
@@ -216,6 +278,15 @@ export default function CriticalCases() {
     .filter((c) => riskFilter === 'All' || c.riskLevel === riskFilter)
     .filter((c) => statusFilter === 'All' || c.status === statusFilter)
     .sort((a, b) => RISK_ORDER[a.riskLevel] - RISK_ORDER[b.riskLevel]);
+
+  // Scroll to and briefly highlight the connection when navigating from an alert
+  useEffect(() => {
+    if (!highlightedConnectionId || connectionsLoading) return;
+    const el = cardRefs.current.get(highlightedConnectionId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlightedConnectionId, connectionsLoading, connections]);
 
   // Close the case details modal if the connection is removed from the active list (e.g. after review)
   useEffect(() => {
@@ -332,15 +403,28 @@ export default function CriticalCases() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredConnections.map((conn) => (
-              <ConnectionCard
-                key={conn.id}
-                connection={conn}
-                onAccept={handleAccept}
-                onMarkReviewed={handleMarkReviewed}
-                onClick={handleOpenCaseDetails}
-              />
-            ))}
+            {filteredConnections.map((conn) => {
+              const isHighlighted = conn.id === highlightedConnectionId;
+              return (
+                <div
+                  key={conn.id}
+                  ref={setCardRef(conn.id)}
+                  className={[
+                    'rounded-2xl transition-all duration-500',
+                    isHighlighted
+                      ? 'ring-2 ring-rose-500 ring-offset-2 shadow-lg shadow-rose-100'
+                      : '',
+                  ].join(' ')}
+                >
+                  <ConnectionCard
+                    connection={conn}
+                    onAccept={handleAccept}
+                    onMarkReviewed={handleMarkReviewed}
+                    onClick={handleOpenCaseDetails}
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
       </section>

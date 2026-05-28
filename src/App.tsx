@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import FlaggedMessageAlert from './components/FlaggedMessageAlert';
+import CriticalCaseAlertToast from './components/CriticalCaseAlertToast';
 
 // Auth pages
 import Login from './pages/Login';
@@ -55,6 +56,8 @@ function ProtectedLayout() {
       </div>
       {/* Global flagged-message toast alerts — monitors group chat, AI chat & journals */}
       <FlaggedMessageAlert />
+      {/* Global critical-case alert toasts — driven by advisors/{id}/alerts sub-collection */}
+      <CriticalCaseAlertToast />
     </div>
   );
 }
