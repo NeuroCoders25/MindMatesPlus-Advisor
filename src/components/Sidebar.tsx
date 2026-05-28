@@ -11,6 +11,7 @@ import {
   Settings,
   Library,
   Video,
+  MessagesSquare,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import logo from '../assets/logo.png';
@@ -27,6 +28,7 @@ const navItems = [
   { icon: BarChart3, label: 'AI Insights', path: '/insights' },
   { icon: FileText, label: 'Reports', path: '/reports' },
   { icon: MessageSquare, label: 'Admin Chats', path: '/chat' },
+  { icon: MessagesSquare, label: 'Advisor Room', path: '/advisor-room' },
   { icon: Settings, label: 'Settings', path: '/settings' },
 ];
 
