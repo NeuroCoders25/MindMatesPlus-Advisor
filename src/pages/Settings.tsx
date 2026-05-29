@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { 
+import {
   Settings as SettingsIcon, Bell, Shield, Globe, Moon,
   Lock, KeyRound, Check, RefreshCw, Eye, EyeOff, AlertCircle, CheckCircle2
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import AdvisorRatingSection from '../components/AdvisorRatingSection';
 
 // Reusable toggle switch component with smooth animations
 const Toggle = ({ checked, onChange }: { checked: boolean; onChange: () => void }) => (
@@ -653,6 +654,8 @@ export default function Settings() {
 
         </div>
       </div>
+
+      <AdvisorRatingSection />
     </motion.div>
   );
 }

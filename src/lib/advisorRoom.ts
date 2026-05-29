@@ -18,6 +18,7 @@ export interface AdvisorMember {
   name: string;
   role: string;
   profileImageUrl?: string;
+  availability?: 'online' | 'busy' | 'away' | 'offline';
 }
 
 const ROOM_DOC = doc(db, 'advisorGroupRooms', 'main');
@@ -78,6 +79,7 @@ export function listenToAdvisorRoomMembers(
         name: data.name ?? '',
         role: data.role ?? '',
         profileImageUrl: data.profileImageUrl ?? '',
+        availability: data.availability ?? 'online',
       };
     });
     callback(members);

@@ -31,11 +31,21 @@ import {
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
+import { availabilityDotClass, availabilityLabel } from '../components/AvailabilitySelector';
+import type { AvailabilityStatus } from '../context/AuthContext';
+
+function normalizeAvailability(raw: unknown): AvailabilityStatus {
+  const v = typeof raw === 'string' ? raw.toLowerCase() : '';
+  if (v === 'busy')    return 'busy';
+  if (v === 'away')    return 'away';
+  if (v === 'offline') return 'offline';
+  return 'online';
+}
 
 interface Admin {
   id: string;
   name: string;
-  status?: string;
+  availability: AvailabilityStatus;
   color?: string;
   role?: string;
   email?: string;
@@ -96,7 +106,7 @@ export default function AdvisorChat() {
           adminMap[doc.id] = {
             id: doc.id,
             name: data.name || 'Anonymous',
-            status: data.status || 'ONLINE',
+            availability: normalizeAvailability(data.availability ?? data.status),
             color: 'bg-brand-500',
             role: data.role || 'Admin',
             email: data.email
@@ -364,7 +374,8 @@ export default function AdvisorChat() {
                   )}>
                     {admin.name.charAt(0).toLowerCase()}
                     <div className={cn(
-                      "absolute -bottom-1 -right-1 w-3.5 h-3.5 border-2 border-white rounded-full bg-green-500"
+                      "absolute -bottom-1 -right-1 w-3.5 h-3.5 border-2 border-white rounded-full",
+                      availabilityDotClass(admin.availability)
                     )} />
                   </div>
                   <div className="text-left flex-1 min-w-0">
@@ -432,8 +443,8 @@ export default function AdvisorChat() {
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">{selectedChatAdmin.name}</h3>
                   <div className="flex items-center gap-1.5">
-                    <div className="w-2 h-2 rounded-full bg-green-500" />
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{selectedChatAdmin.status || 'ONLINE'}</span>
+                    <div className={`w-2 h-2 rounded-full ${availabilityDotClass(selectedChatAdmin.availability)}`} />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{availabilityLabel(selectedChatAdmin.availability)}</span>
                   </div>
                 </div>
               </div>

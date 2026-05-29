@@ -10,9 +10,18 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import type { AvailabilityStatus } from '../context/AuthContext';
 import { subscribeAlertCount } from './FlaggedMessageAlert';
 import { AdvisorConnection } from '../types';
 import { listenToCriticalCases } from '../lib/advisorConnections';
+import { availabilityDotClass, availabilityLabel } from './AvailabilitySelector';
+
+const AVAILABILITY_OPTIONS: { value: AvailabilityStatus; label: string; dot: string }[] = [
+  { value: 'online',  label: 'Online',  dot: 'bg-emerald-500' },
+  { value: 'busy',    label: 'Busy',    dot: 'bg-amber-500'   },
+  { value: 'away',    label: 'Away',    dot: 'bg-slate-400'   },
+  { value: 'offline', label: 'Offline', dot: 'bg-slate-300'   },
+];
 
 // ── Tiny local helpers ────────────────────────────────────────────────────────
 
@@ -45,7 +54,7 @@ export default function Navbar() {
   }, []);
 
   // ── Pending critical connection badge + dropdown ──────────────────────────
-  const { currentUser, logout } = useAuth();
+  const { currentUser, logout, advisorProfile, updateAvailability } = useAuth();
   const [pendingConnections, setPendingConnections] = useState<AdvisorConnection[]>([]);
 
   // IDs of notifications the advisor has already opened/clicked at least once
@@ -99,6 +108,18 @@ export default function Navbar() {
   // ── Profile dropdown ──────────────────────────────────────────────────────
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const currentAvailability = advisorProfile?.availability ?? 'online';
+  const [savingAvailability, setSavingAvailability] = useState(false);
+
+  async function handleAvailabilityChange(status: AvailabilityStatus) {
+    if (status === currentAvailability || savingAvailability) return;
+    setSavingAvailability(true);
+    try {
+      await updateAvailability(status);
+    } finally {
+      setSavingAvailability(false);
+    }
+  }
 
   const navigate = useNavigate();
 
@@ -273,21 +294,51 @@ export default function Navbar() {
             onClick={() => setProfileOpen((v) => !v)}
             className="flex items-center gap-3 cursor-pointer hover:bg-white/10 p-1 pr-3 rounded-xl transition-colors"
           >
-            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white/60">
+            <div className="relative w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white/60">
               <User size={18} />
+              <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#0f1535] ${availabilityDotClass(currentAvailability)}`} />
             </div>
-            <span className="text-sm font-medium text-white/80">Advisor Portal</span>
+            <div className="flex flex-col items-start">
+              <span className="text-sm font-medium text-white/80 leading-tight">Advisor Portal</span>
+              <span className="text-[10px] font-semibold text-white/40 leading-tight">{availabilityLabel(currentAvailability)}</span>
+            </div>
           </button>
 
           {profileOpen && (
-            <div className="absolute right-0 mt-2 w-44 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-50">
-              <button
-                onClick={handleSignOut}
-                className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
-              >
-                <LogOut size={16} />
-                Sign out
-              </button>
+            <div className="absolute right-0 mt-2 w-52 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-50">
+              {/* Availability quick-change */}
+              <div className="px-3 pt-3 pb-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">Set Status</p>
+                <div className="space-y-0.5">
+                  {AVAILABILITY_OPTIONS.map((opt) => {
+                    const isActive = currentAvailability === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => handleAvailabilityChange(opt.value)}
+                        disabled={savingAvailability}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors ${
+                          isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50 font-medium'
+                        }`}
+                      >
+                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${opt.dot}`} />
+                        {opt.label}
+                        {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-500" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 mt-1">
+                <button
+                  onClick={handleSignOut}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <LogOut size={16} />
+                  Sign out
+                </button>
+              </div>
             </div>
           )}
         </div>

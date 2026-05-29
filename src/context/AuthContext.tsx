@@ -7,8 +7,10 @@ import {
   sendPasswordResetEmail,
   onAuthStateChanged,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+
+export type AvailabilityStatus = 'online' | 'busy' | 'away' | 'offline';
 
 export interface AdvisorProfile {
   name: string;
@@ -19,6 +21,7 @@ export interface AdvisorProfile {
   qualifications?: string;
   about?: string;
   isModerator?: boolean;
+  availability?: AvailabilityStatus;
 }
 
 interface AuthContextType {
@@ -30,6 +33,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updateAdvisorProfile: (updates: Partial<AdvisorProfile>) => void;
+  updateAvailability: (status: AvailabilityStatus) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -75,6 +79,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAdvisorProfile((prev) => (prev ? { ...prev, ...updates } : prev));
   }
 
+  async function updateAvailability(status: AvailabilityStatus) {
+    if (!currentUser) return;
+    await updateDoc(doc(db, 'advisors', currentUser.uid), { availability: status });
+    setAdvisorProfile((prev) => (prev ? { ...prev, availability: status } : prev));
+  }
+
   function resetPassword(email: string) {
     return sendPasswordResetEmail(auth, email);
   }
@@ -96,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               qualifications: data.qualifications,
               about: data.about,
               isModerator: data.isModerator ?? false,
+              availability: data.availability ?? 'online',
             });
           }
         } catch {
@@ -110,7 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ currentUser, advisorProfile, loading, signup, login, logout, resetPassword, updateAdvisorProfile }}>
+    <AuthContext.Provider value={{ currentUser, advisorProfile, loading, signup, login, logout, resetPassword, updateAdvisorProfile, updateAvailability }}>
       {children}
     </AuthContext.Provider>
   );

@@ -12,6 +12,7 @@ import {
   AdvisorMember,
 } from '../lib/advisorRoom';
 import { cn } from '../lib/utils';
+import { availabilityDotClass } from '../components/AvailabilitySelector';
 
 function formatTime(ts: any): string {
   if (!ts) return '';
@@ -354,7 +355,7 @@ export default function AdvisorRoom() {
                             getInitials(member.name)
                           )}
                         </div>
-                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-400 border-2 border-slate-50 rounded-full" />
+                        <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 border-2 border-slate-50 rounded-full ${availabilityDotClass(member.availability)}`} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-slate-700 truncate">

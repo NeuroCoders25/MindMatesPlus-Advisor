@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { uploadImageToImageKit } from '../services/imageUploadService';
+import AvailabilitySelector from '../components/AvailabilitySelector';
 
 function getInitials(name: string) {
   return name
@@ -297,6 +298,8 @@ export default function AdvisorProfile() {
           </div>
         </div>
       </div>
+
+      <AvailabilitySelector />
 
       <AnimatePresence>
         {isEditing && (
