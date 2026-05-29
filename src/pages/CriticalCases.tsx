@@ -11,6 +11,7 @@ import CaseDetailsModal from '../components/CaseDetailsModal';
 import { Case, AdvisorConnection } from '../types';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, getDoc, doc } from 'firebase/firestore';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   listenToCriticalCases,
@@ -256,6 +257,11 @@ export default function CriticalCases() {
   }, []);
 
   const filteredConnections = connections
+    .filter((c) => {
+      if (c.caseType === 'listener_support') return false;
+      const cat = (c.userMentalHealthCategory ?? '').toLowerCase();
+      return c.caseType === 'critical_case' || cat.includes('severe') || cat.includes('critical');
+    })
     .filter((c) =>
       connSearch === '' ||
       (c.nickName ?? c.userName).toLowerCase().includes(connSearch.toLowerCase()) ||
@@ -343,14 +349,23 @@ export default function CriticalCases() {
       {/* ── Advisor Connection Requests ── */}
       <section className="space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <UserCheck size={20} className="text-brand-500" />
-            <h2 className="text-xl font-bold text-slate-800">Connection Requests</h2>
-            {connections.length > 0 && (
-              <span className="text-xs font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
-                {connections.length}
-              </span>
-            )}
+          <div>
+            <div className="flex items-center gap-2">
+              <UserCheck size={20} className="text-brand-500" />
+              <h2 className="text-xl font-bold text-slate-800">Connection Requests</h2>
+              {filteredConnections.length > 0 && (
+                <span className="text-xs font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
+                  {filteredConnections.length}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Severe and critical cases requiring immediate attention. Routine support requests appear under{' '}
+              <Link to="/listener-requests" className="text-brand-500 hover:underline">
+                Listener Requests
+              </Link>
+              .
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -396,9 +411,9 @@ export default function CriticalCases() {
           <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-200">
             <UserCheck size={36} className="mx-auto mb-3 text-slate-300" />
             <p className="text-slate-500 font-medium">
-              {connections.length === 0
-                ? 'No critical case connection requests yet.'
-                : 'No requests match the current filters.'}
+              {filteredConnections.length === 0 && connections.length > 0
+                ? 'No requests match the current filters.'
+                : 'No critical connection requests yet.'}
             </p>
           </div>
         ) : (

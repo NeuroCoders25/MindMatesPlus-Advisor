@@ -105,7 +105,7 @@ export interface AdvisorConnection {
   nickName?: string;
   advisorId: string;
   advisorName?: string;
-  status: 'pending' | 'accepted' | 'reviewed' | 'approved';
+  status: 'pending' | 'accepted' | 'reviewed' | 'approved' | 'declined';
   caseType: string;
   reason: string;
   userMentalHealthCategory: string;
@@ -114,6 +114,10 @@ export interface AdvisorConnection {
   createdAt: unknown;
   updatedAt?: unknown;
   approvedAt?: unknown;
+  acceptedAt?: unknown;
+  acceptedByAdvisorId?: string;
+  declinedAt?: unknown;
+  declineReason?: string;
 }
 
 export interface PeerGroup {

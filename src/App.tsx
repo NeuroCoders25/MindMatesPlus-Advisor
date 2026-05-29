@@ -26,6 +26,8 @@ import AdvisorProfile from './pages/AdvisorProfile';
 import CallsOverview from './pages/CallsOverview';
 import AdvisorRoom from './pages/AdvisorRoom';
 import SystemSupport from './pages/SystemSupport';
+import ListenerRequests from './pages/ListenerRequests';
+import { ListenerChatProvider } from './context/ListenerChatContext';
 
 function ProtectedLayout() {
   const { currentUser, loading } = useAuth();
@@ -33,36 +35,39 @@ function ProtectedLayout() {
   if (!currentUser) return <Navigate to="/login" replace />;
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Navbar />
-        <main className="flex-1 p-8 overflow-y-auto">
-          <div className="max-w-7xl mx-auto">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/critical-cases" element={<CriticalCases />} />
-              <Route path="/monitoring" element={<UserMonitoring />} />
-              <Route path="/chat-review" element={<ChatReview />} />
-              <Route path="/journal-review" element={<JournalReview />} />
-              <Route path="/resources" element={<Resources />} />
-              <Route path="/insights" element={<AIInsights />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/calls" element={<CallsOverview />} />
-              <Route path="/chat" element={<AdvisorChat />} />
-              <Route path="/advisor-room" element={<AdvisorRoom />} />
-              <Route path="/support" element={<SystemSupport />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/profile" element={<AdvisorProfile />} />
-            </Routes>
-          </div>
-        </main>
+    <ListenerChatProvider>
+      <div className="flex min-h-screen bg-slate-50">
+        <Sidebar />
+        <div className="flex-1 flex flex-col min-w-0">
+          <Navbar />
+          <main className="flex-1 p-8 overflow-y-auto">
+            <div className="max-w-7xl mx-auto">
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/critical-cases" element={<CriticalCases />} />
+                <Route path="/monitoring" element={<UserMonitoring />} />
+                <Route path="/chat-review" element={<ChatReview />} />
+                <Route path="/journal-review" element={<JournalReview />} />
+                <Route path="/resources" element={<Resources />} />
+                <Route path="/insights" element={<AIInsights />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/calls" element={<CallsOverview />} />
+                <Route path="/chat" element={<AdvisorChat />} />
+                <Route path="/advisor-room" element={<AdvisorRoom />} />
+                <Route path="/listener-requests" element={<ListenerRequests />} />
+                <Route path="/support" element={<SystemSupport />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/profile" element={<AdvisorProfile />} />
+              </Routes>
+            </div>
+          </main>
+        </div>
+        {/* Global flagged-message toast alerts — monitors group chat, AI chat & journals */}
+        <FlaggedMessageAlert />
+        {/* Global critical-case alert toasts — driven by advisors/{id}/alerts sub-collection */}
+        <CriticalCaseAlertToast />
       </div>
-      {/* Global flagged-message toast alerts — monitors group chat, AI chat & journals */}
-      <FlaggedMessageAlert />
-      {/* Global critical-case alert toasts — driven by advisors/{id}/alerts sub-collection */}
-      <CriticalCaseAlertToast />
-    </div>
+    </ListenerChatProvider>
   );
 }
 

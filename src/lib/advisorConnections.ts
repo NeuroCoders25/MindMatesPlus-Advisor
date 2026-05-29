@@ -252,6 +252,172 @@ export async function approveUserCase(
   });
 }
 
+export function listenToListenerRequests(
+  advisorId: string,
+  onUpdate: (requests: AdvisorConnection[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  const q = query(
+    collection(db, 'advisorConnections'),
+    where('advisorId', '==', advisorId),
+    where('caseType', '==', 'listener_support')
+  );
+
+  return onSnapshot(
+    q,
+    async (snap) => {
+      const all = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<AdvisorConnection, 'id'>),
+      }));
+
+      // Show pending AND accepted (in-progress) — reviewed/declined are hidden
+      const visible = all.filter(
+        (c) => c.status === 'pending' || c.status === 'accepted'
+      );
+
+      const sorted = [...visible].sort((a, b) => {
+        const aTs = (a.createdAt as { seconds?: number })?.seconds ?? 0;
+        const bTs = (b.createdAt as { seconds?: number })?.seconds ?? 0;
+        return bTs - aTs;
+      });
+
+      const enriched = await Promise.all(
+        sorted.map(async (conn) => {
+          try {
+            const userSnap = await getDoc(doc(db, 'users', conn.userId));
+            const nickname = userSnap.exists()
+              ? (userSnap.data()?.nickname as string | undefined)
+              : undefined;
+            return { ...conn, nickName: nickname || conn.nickName };
+          } catch {
+            return conn;
+          }
+        })
+      );
+
+      onUpdate(enriched);
+    },
+    (err) => onError?.(err as Error)
+  );
+}
+
+export async function acceptListenerRequest(
+  connectionId: string,
+  userId: string,
+  advisorId: string
+): Promise<boolean> {
+  void userId; // user's access level is unchanged — do NOT touch mentalHealthProfile
+  try {
+    await updateDoc(doc(db, 'advisorConnections', connectionId), {
+      status: 'accepted',
+      acceptedAt: serverTimestamp(),
+      acceptedByAdvisorId: advisorId,
+      updatedAt: serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    console.error('[ListenerRequest] acceptListenerRequest failed:', err);
+    return false;
+  }
+}
+
+export async function declineListenerRequest(
+  connectionId: string,
+  reason?: string
+): Promise<boolean> {
+  try {
+    await updateDoc(doc(db, 'advisorConnections', connectionId), {
+      status: 'declined',
+      declinedAt: serverTimestamp(),
+      declineReason: reason ?? '',
+      updatedAt: serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    console.error('[ListenerRequest] declineListenerRequest failed:', err);
+    return false;
+  }
+}
+
+export function listenToActiveListenerChats(
+  advisorId: string,
+  onUpdate: (chats: AdvisorConnection[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  const q = query(
+    collection(db, 'advisorConnections'),
+    where('advisorId', '==', advisorId),
+    where('caseType', '==', 'listener_support')
+  );
+
+  return onSnapshot(
+    q,
+    async (snap) => {
+      const all = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<AdvisorConnection, 'id'>),
+      }));
+
+      const active = all.filter((c) => c.status === 'accepted' || c.status === 'approved');
+
+      const sorted = [...active].sort((a, b) => {
+        const aTs =
+          (a.acceptedAt as { seconds?: number })?.seconds ??
+          (a.createdAt as { seconds?: number })?.seconds ?? 0;
+        const bTs =
+          (b.acceptedAt as { seconds?: number })?.seconds ??
+          (b.createdAt as { seconds?: number })?.seconds ?? 0;
+        return bTs - aTs;
+      });
+
+      const enriched = await Promise.all(
+        sorted.map(async (conn) => {
+          try {
+            const userSnap = await getDoc(doc(db, 'users', conn.userId));
+            const nickname = userSnap.exists()
+              ? (userSnap.data()?.nickname as string | undefined)
+              : undefined;
+            return { ...conn, nickName: nickname || conn.nickName };
+          } catch {
+            return conn;
+          }
+        })
+      );
+
+      onUpdate(enriched);
+    },
+    (err) => onError?.(err as Error)
+  );
+}
+
+export async function fetchAcceptedTodayCount(advisorId: string): Promise<number> {
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, 'advisorConnections'),
+        where('advisorId', '==', advisorId),
+        where('caseType', '==', 'listener_support')
+      )
+    );
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    const midnightSecs = Math.floor(midnight.getTime() / 1000);
+    return snap.docs.filter((d) => {
+      const data = d.data();
+      return (
+        data.status === 'accepted' &&
+        typeof data.acceptedAt === 'object' &&
+        data.acceptedAt !== null &&
+        'seconds' in data.acceptedAt &&
+        (data.acceptedAt as { seconds: number }).seconds >= midnightSecs
+      );
+    }).length;
+  } catch {
+    return 0;
+  }
+}
+
 export function listenToCaseMessages(
   connectionId: string,
   onUpdate: (messages: CaseMessage[]) => void

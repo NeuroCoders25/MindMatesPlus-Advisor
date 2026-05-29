@@ -1,4 +1,3 @@
-import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -21,6 +20,7 @@ import { useAuth } from '../context/AuthContext';
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
   { icon: AlertTriangle, label: 'Critical Cases', path: '/critical-cases' },
+  { icon: HeadphonesIcon, label: 'Listener Requests', path: '/listener-requests' },
   { icon: Users, label: 'User Monitoring', path: '/monitoring' },
   { icon: MessageSquare, label: 'Chat Monitoring', path: '/chat-review' },
   { icon: Video, label: 'Group Calls', path: '/calls' },
