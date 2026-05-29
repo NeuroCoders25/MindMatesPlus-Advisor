@@ -193,3 +193,44 @@ export interface FlaggedAlert {
   timestamp: Date;
   navPath: string;
 }
+
+// ─── System Support (Advisor → Admin) ────────────────────────────────────────
+
+export type SupportCategory =
+  | 'Technical Issue'
+  | 'Urgent Case'
+  | 'System Error'
+  | 'Consultation'
+  | 'Policy Question'
+  | 'Other';
+
+export type SupportPriority = 'Low' | 'Medium' | 'High' | 'Critical';
+
+export type SupportStatus = 'pending' | 'in_progress' | 'resolved' | 'closed';
+
+export interface SupportRequest {
+  id: string;
+  advisorId: string;
+  advisorName: string;
+  adminId?: string;
+  adminName?: string;
+  category: SupportCategory;
+  priority: SupportPriority;
+  subject: string;
+  description: string;
+  status: SupportStatus;
+  createdAt: unknown;
+  updatedAt?: unknown;
+  resolvedAt?: unknown;
+  chatId?: string;
+}
+
+export interface AdminAvailability {
+  id: string;
+  name: string;
+  email?: string;
+  role?: string;
+  availability: 'online' | 'busy' | 'away' | 'offline';
+  profileImageUrl?: string;
+  lastSeen?: unknown;
+}
