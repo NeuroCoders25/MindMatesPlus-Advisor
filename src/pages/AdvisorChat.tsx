@@ -9,7 +9,8 @@ import {
   User,
   ShieldCheck,
   Loader2,
-  Paperclip
+  Paperclip,
+  CornerUpLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -33,6 +34,10 @@ import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
 import { availabilityDotClass, availabilityLabel } from '../components/AvailabilitySelector';
 import type { AvailabilityStatus } from '../context/AuthContext';
+import { encryptText, decryptBatch, safeText, EncryptedMessage } from '../services/cryptoService';
+import ReplyPreview from '../components/ReplyPreview';
+import QuotedMessage from '../components/QuotedMessage';
+import { ReplyTo } from '../types';
 
 function normalizeAvailability(raw: unknown): AvailabilityStatus {
   const v = typeof raw === 'string' ? raw.toLowerCase() : '';
@@ -72,6 +77,7 @@ interface Message {
   messageType: string;
   createdAt: any;
   isRead: boolean;
+  replyTo?: ReplyTo | null;
 }
 
 export default function AdvisorChat() {
@@ -84,10 +90,18 @@ export default function AdvisorChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const scrollToMessage = (id: string) => {
+    document.getElementById(`msg-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedMsgId(id);
+    setTimeout(() => setHighlightedMsgId(null), 1500);
   };
 
   useEffect(() => {
@@ -131,16 +145,19 @@ export default function AdvisorChat() {
       orderBy('updatedAt', 'desc')
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
       const chatList: Chat[] = [];
       snapshot.forEach((doc) => {
         chatList.push({ id: doc.id, ...doc.data() } as Chat);
       });
-      setChats(chatList);
+      const lastMsgs = chatList.map(c => (c.lastMessage ?? '') as EncryptedMessage | string);
+      const plains = await decryptBatch(lastMsgs);
+      const decryptedList = chatList.map((c, i) => ({ ...c, lastMessage: plains[i] }));
+      setChats(decryptedList);
 
       // If we have a selected chat, update it with fresh data
       if (selectedChat) {
-        const updated = chatList.find(c => c.id === selectedChat.id);
+        const updated = decryptedList.find(c => c.id === selectedChat.id);
         if (updated) setSelectedChat(updated);
       }
     });
@@ -160,38 +177,81 @@ export default function AdvisorChat() {
       orderBy('createdAt', 'asc')
     );
 
-    const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
-      const msgList: Message[] = [];
-      const unreadIds: string[] = [];
+    let inFlightMsgs = false;
+    const unsubscribe = onSnapshot(messagesQuery, async (snapshot) => {
+      if (inFlightMsgs) return;
+      inFlightMsgs = true;
+      try {
+        const rawDocs = [...snapshot.docs];
+        const rawData = rawDocs.map((d) => d.data());
 
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        const msg = {
-          id: doc.id,
-          messageText: data.messageText || data.text || '',
-          senderId: data.senderId,
-          senderRole: data.senderRole || '',
-          receiverId: data.receiverId || '',
-          messageType: data.messageType || 'text',
-          createdAt: data.createdAt || data.timestamp,
-          isRead: data.isRead || false
-        } as Message;
-        msgList.push(msg);
+        // Interim: crash-safe placeholder state immediately
+        setMessages(rawDocs.map((d, i) => {
+          const rawReplyTo = rawData[i].replyTo as Record<string, unknown> | undefined | null;
+          return {
+            id: d.id,
+            messageText: safeText(rawData[i].messageText ?? rawData[i].text),
+            senderId: rawData[i].senderId,
+            senderRole: rawData[i].senderRole || '',
+            receiverId: rawData[i].receiverId || '',
+            messageType: rawData[i].messageType || 'text',
+            createdAt: rawData[i].createdAt || rawData[i].timestamp,
+            isRead: rawData[i].isRead || false,
+            replyTo: rawReplyTo
+              ? { messageId: rawReplyTo.messageId as string, snippet: safeText(rawReplyTo.snippet), senderName: rawReplyTo.senderName as string, senderId: rawReplyTo.senderId as string }
+              : null,
+          } as Message;
+        }));
 
-        // Mark admin messages as read
-        if (msg.senderRole === 'admin' && !msg.isRead) {
-          unreadIds.push(doc.id);
-        }
-      });
-      setMessages(msgList);
+        const texts = rawData.map(
+          (d) => (d.messageText ?? d.text ?? '') as EncryptedMessage | string,
+        );
+        const snippets = rawData.map(
+          (d) => ((d.replyTo as Record<string, unknown> | undefined)?.snippet ?? '') as EncryptedMessage | string,
+        );
+        const decrypted = await decryptBatch([...texts, ...snippets]);
+        const n = rawDocs.length;
+        const msgList: Message[] = [];
+        const unreadIds: string[] = [];
 
-      if (unreadIds.length > 0) {
-        const batch = writeBatch(db);
-        unreadIds.forEach((id) => {
-          const msgRef = doc(db, 'privateChats', selectedChat.id, 'messages', id);
-          batch.update(msgRef, { isRead: true });
+        rawDocs.forEach((d, i) => {
+          const data = rawData[i];
+          const rawReplyTo = data.replyTo as Record<string, unknown> | undefined | null;
+          const msg: Message = {
+            id: d.id,
+            messageText: decrypted[i],
+            senderId: data.senderId,
+            senderRole: data.senderRole || '',
+            receiverId: data.receiverId || '',
+            messageType: data.messageType || 'text',
+            createdAt: data.createdAt || data.timestamp,
+            isRead: data.isRead || false,
+            replyTo: rawReplyTo
+              ? {
+                  messageId: rawReplyTo.messageId as string,
+                  snippet: decrypted[n + i],
+                  senderName: rawReplyTo.senderName as string,
+                  senderId: rawReplyTo.senderId as string,
+                }
+              : null,
+          };
+          msgList.push(msg);
+          if (msg.senderRole === 'admin' && !msg.isRead) {
+            unreadIds.push(d.id);
+          }
         });
-        batch.commit().catch(err => console.error("Error marking messages as read:", err));
+        setMessages(msgList);
+
+        if (unreadIds.length > 0) {
+          const batch = writeBatch(db);
+          unreadIds.forEach((id) => {
+            const msgRef = doc(db, 'privateChats', selectedChat.id, 'messages', id);
+            batch.update(msgRef, { isRead: true });
+          });
+          batch.commit().catch(err => console.error("Error marking messages as read:", err));
+        }
+      } finally {
+        inFlightMsgs = false;
       }
     });
 
@@ -225,30 +285,47 @@ export default function AdvisorChat() {
 
     const chatId = selectedChat.id;
     const messageText = newMessage.trim();
+    const pendingReply = replyingTo;
     setNewMessage('');
+    setReplyingTo(null);
 
     try {
       const chatRef = doc(db, 'privateChats', chatId);
-      const messageData = {
-        senderId: currentUser.uid,
-        senderRole: "advisor",
-        receiverId: adminId,
-        messageText,
-        messageType: "text",
-        createdAt: serverTimestamp(),
-        isRead: false
-      };
+      const encrypted = await encryptText(messageText);
 
-      await addDoc(collection(db, 'privateChats', chatId, 'messages'), messageData);
+      let replyToField = null;
+      if (pendingReply) {
+        const senderName =
+          pendingReply.senderId === currentUser.uid
+            ? (advisorProfile?.name ?? 'You')
+            : (admins[pendingReply.senderId]?.name ?? 'Admin');
+        replyToField = {
+          messageId: pendingReply.id,
+          snippet: await encryptText(pendingReply.messageText.slice(0, 80)),
+          senderName,
+          senderId: pendingReply.senderId,
+        };
+      }
+
+      await addDoc(collection(db, 'privateChats', chatId, 'messages'), {
+        senderId: currentUser.uid,
+        senderRole: 'advisor',
+        receiverId: adminId,
+        messageText: encrypted,
+        messageType: 'text',
+        createdAt: serverTimestamp(),
+        isRead: false,
+        ...(replyToField ? { replyTo: replyToField } : {}),
+      });
 
       await updateDoc(chatRef, {
-        lastMessage: messageText,
+        lastMessage: encrypted,
         lastMessageSenderId: currentUser.uid,
         lastMessageAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
       });
     } catch (error) {
-      console.error("Error sending message:", error);
+      console.error('Error sending message:', error);
     }
   };
 
@@ -401,7 +478,7 @@ export default function AdvisorChat() {
                           "text-xs truncate",
                           unread > 0 ? "font-semibold text-slate-700" : "font-medium text-slate-500"
                         )}>
-                          {chat.lastMessage}
+                          {safeText(chat.lastMessage)}
                         </p>
                       ) : (
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
@@ -482,35 +559,54 @@ export default function AdvisorChat() {
                   </div>
                   {messages.map((msg) => {
                     const isMe = msg.senderId === currentUser?.uid;
+                    const isHighlighted = highlightedMsgId === msg.id;
                     return (
                       <motion.div
                         initial={{ opacity: 0, scale: 0.95, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         key={msg.id}
+                        id={`msg-${msg.id}`}
                         className={cn(
-                          "flex w-full",
-                          isMe ? "justify-end" : "justify-start"
+                          'flex w-full',
+                          isMe ? 'justify-end' : 'justify-start',
+                          isHighlighted && 'ring-2 ring-indigo-400 ring-offset-2 rounded-2xl'
                         )}
                       >
                         <div className={cn(
-                          "max-w-[70%] group",
-                          isMe ? "items-end" : "items-start"
+                          'max-w-[70%] group',
+                          isMe ? 'items-end' : 'items-start'
                         )}>
                           <div className={cn(
-                            "px-4 py-2.5 rounded-2xl shadow-sm relative",
+                            'px-4 py-2.5 rounded-2xl shadow-sm relative',
                             isMe
-                              ? "bg-brand-500 text-white rounded-tr-none"
-                              : "bg-white border border-slate-100 text-slate-700 rounded-tl-none"
+                              ? 'bg-brand-500 text-white rounded-tr-none'
+                              : 'bg-white border border-slate-100 text-slate-700 rounded-tl-none'
                           )}>
-                            <p className="text-sm leading-relaxed">{msg.messageText}</p>
+                            {msg.replyTo && (
+                              <QuotedMessage
+                                replyTo={msg.replyTo}
+                                onScrollTo={scrollToMessage}
+                                variant={isMe ? 'light' : 'default'}
+                              />
+                            )}
+                            <p className="text-sm leading-relaxed">{safeText(msg.messageText)}</p>
                           </div>
-                          <p className={cn(
-                            "text-[10px] font-medium mt-1 text-slate-400 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity",
-                            isMe ? "justify-end" : "justify-start"
+                          <div className={cn(
+                            'flex items-center gap-2 mt-1',
+                            isMe ? 'justify-end' : 'justify-start'
                           )}>
-                            {formatTime(msg.createdAt)}
-                            {isMe && <ShieldCheck size={10} className="text-brand-400" />}
-                          </p>
+                            <p className="text-[10px] font-medium text-slate-400 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {formatTime(msg.createdAt)}
+                              {isMe && <ShieldCheck size={10} className="text-brand-400" />}
+                            </p>
+                            <button
+                              onClick={() => setReplyingTo(msg)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-slate-300 hover:text-indigo-500 rounded"
+                              title="Reply"
+                            >
+                              <CornerUpLeft size={12} />
+                            </button>
+                          </div>
                         </div>
                       </motion.div>
                     );
@@ -522,6 +618,17 @@ export default function AdvisorChat() {
 
             {/* Message Input */}
             <form onSubmit={handleSendMessage} className="p-6 border-t border-slate-100 bg-white">
+              {replyingTo && (
+                <ReplyPreview
+                  senderName={
+                    replyingTo.senderId === currentUser?.uid
+                      ? (advisorProfile?.name ?? 'You')
+                      : (admins[replyingTo.senderId]?.name ?? 'Admin')
+                  }
+                  snippet={replyingTo.messageText}
+                  onCancel={() => setReplyingTo(null)}
+                />
+              )}
               <div className="flex items-center gap-3">
                 <button type="button" className="p-2.5 text-slate-400 hover:text-brand-500 hover:bg-brand-50 rounded-xl transition-all">
                   <Paperclip size={20} />

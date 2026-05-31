@@ -12,6 +12,7 @@ import {
   markUserMessagesAsRead,
   markCaseReviewed,
 } from '../lib/advisorConnections';
+import { safeText } from '../services/cryptoService';
 
 function formatTime(value: unknown): string {
   if (!value || typeof value !== 'object' || !('seconds' in value)) return '';
@@ -280,7 +281,7 @@ export default function ListenerChatModal({ isOpen, onClose, initialConnectionId
                               : 'bg-slate-100 text-slate-800 rounded-tl-sm',
                           ].join(' ')}
                         >
-                          <p>{msg.messageText}</p>
+                          <p>{safeText(msg.messageText)}</p>
                           <p className={`text-xs mt-1 text-right ${isAdvisor ? 'text-blue-100' : 'text-slate-400'}`}>
                             {formatTime(msg.createdAt)}
                           </p>

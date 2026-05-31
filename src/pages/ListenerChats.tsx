@@ -6,11 +6,14 @@ import {
   Clock,
   Users,
   Headphones,
+  CornerUpLeft,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { AdvisorConnection, CaseMessage } from '../types';
+import ReplyPreview from '../components/ReplyPreview';
+import QuotedMessage from '../components/QuotedMessage';
 import {
   listenToActiveListenerChats,
   listenToCaseMessages,
@@ -18,6 +21,7 @@ import {
   markUserMessagesAsRead,
   markCaseReviewed,
 } from '../lib/advisorConnections';
+import { safeText } from '../services/cryptoService';
 
 function formatTime(value: unknown): string {
   if (!value || typeof value !== 'object' || !('seconds' in value)) return '';
@@ -42,11 +46,19 @@ export default function ListenerChats() {
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
   const [resolving, setResolving] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<CaseMessage | null>(null);
+  const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
 
   // Guard so we only auto-select once per mount, not on every re-render
   const hasAutoSelected = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const scrollToMessage = (id: string) => {
+    document.getElementById(`msg-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedMsgId(id);
+    setTimeout(() => setHighlightedMsgId(null), 1500);
+  };
 
   // Read connection id from navigation state and auto-select that conversation
   useEffect(() => {
@@ -73,6 +85,7 @@ export default function ListenerChats() {
   // Subscribe to messages of the selected conversation
   useEffect(() => {
     if (!selectedId) { setMessages([]); return; }
+    setReplyingTo(null);
     const unsub = listenToCaseMessages(selectedId, (msgs) => setMessages(msgs));
     markUserMessagesAsRead(selectedId).catch(() => {});
     return unsub;
@@ -94,15 +107,25 @@ export default function ListenerChats() {
     if (!currentUser || !selectedId || !messageText.trim()) return;
     const chat = chats.find((c) => c.id === selectedId);
     if (!chat) return;
+    const pendingReply = replyingTo;
     setSending(true);
+    setReplyingTo(null);
     try {
-      await sendAdvisorCaseMessage(selectedId, currentUser.uid, chat.userId, messageText.trim());
+      const replyPayload = pendingReply
+        ? {
+            messageId: pendingReply.id,
+            snippetPlain: pendingReply.messageText,
+            senderName: pendingReply.senderRole === 'advisor' ? 'Advisor' : (chat.nickName || chat.userName || 'User'),
+            senderId: pendingReply.senderId,
+          }
+        : null;
+      await sendAdvisorCaseMessage(selectedId, currentUser.uid, chat.userId, messageText.trim(), replyPayload);
       setMessageText('');
       inputRef.current?.focus();
     } finally {
       setSending(false);
     }
-  }, [currentUser, selectedId, messageText, chats]);
+  }, [currentUser, selectedId, messageText, chats, replyingTo]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -248,8 +271,17 @@ export default function ListenerChats() {
               ) : (
                 messages.map((msg) => {
                   const isAdvisor = msg.senderRole === 'advisor';
+                  const isHighlighted = highlightedMsgId === msg.id;
                   return (
-                    <div key={msg.id} className={`flex ${isAdvisor ? 'justify-end' : 'justify-start'}`}>
+                    <div
+                      id={`msg-${msg.id}`}
+                      key={msg.id}
+                      className={[
+                        'group flex',
+                        isAdvisor ? 'justify-end' : 'justify-start',
+                        isHighlighted ? 'ring-2 ring-indigo-400 ring-offset-2 rounded-2xl' : '',
+                      ].join(' ')}
+                    >
                       <div
                         className={[
                           'max-w-[72%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed',
@@ -258,10 +290,26 @@ export default function ListenerChats() {
                             : 'bg-slate-100 text-slate-800 rounded-tl-sm',
                         ].join(' ')}
                       >
-                        <p>{msg.messageText}</p>
-                        <p className={`text-xs mt-1 text-right ${isAdvisor ? 'text-blue-100' : 'text-slate-400'}`}>
-                          {formatTime(msg.createdAt)}
-                        </p>
+                        {msg.replyTo && (
+                          <QuotedMessage
+                            replyTo={msg.replyTo}
+                            onScrollTo={scrollToMessage}
+                            variant={isAdvisor ? 'light' : 'default'}
+                          />
+                        )}
+                        <p>{safeText(msg.messageText)}</p>
+                        <div className={`flex items-center gap-1 mt-1 ${isAdvisor ? 'justify-end' : 'justify-start'}`}>
+                          <p className={`text-xs ${isAdvisor ? 'text-blue-100' : 'text-slate-400'}`}>
+                            {formatTime(msg.createdAt)}
+                          </p>
+                          <button
+                            onClick={() => setReplyingTo(msg)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:text-indigo-300 text-blue-200"
+                            title="Reply"
+                          >
+                            <CornerUpLeft size={11} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -272,6 +320,17 @@ export default function ListenerChats() {
 
             {/* Input */}
             <div className="px-4 py-3 border-t border-slate-100 shrink-0">
+              {replyingTo && (
+                <ReplyPreview
+                  senderName={
+                    replyingTo.senderRole === 'advisor'
+                      ? 'Advisor'
+                      : (selectedChat?.nickName || selectedChat?.userName || 'User')
+                  }
+                  snippet={replyingTo.messageText}
+                  onCancel={() => setReplyingTo(null)}
+                />
+              )}
               <div className="flex items-end gap-2">
                 <textarea
                   ref={inputRef}

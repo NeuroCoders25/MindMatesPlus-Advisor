@@ -131,6 +131,20 @@ export interface PeerGroup {
   imageUrl?: string;
 }
 
+export interface ReplyTo {
+  messageId: string;
+  snippet: string;
+  senderName: string;
+  senderId: string;
+}
+
+export interface ReplyToPayload {
+  messageId: string;
+  snippetPlain: string;
+  senderName: string;
+  senderId: string;
+}
+
 export interface CaseMessage {
   id: string;
   senderId: string;
@@ -140,6 +154,7 @@ export interface CaseMessage {
   messageType: string;
   createdAt: unknown;
   isRead: boolean;
+  replyTo?: ReplyTo | null;
 }
 
 export interface LiveChatMessage {
@@ -157,6 +172,7 @@ export interface LiveChatMessage {
   reviewedBy?: string;
   reviewedAt?: Date | null;
   rejectionReason?: string | null;
+  replyTo?: ReplyTo | null;
 }
 
 export interface AdvisorPrivateMessage {
@@ -174,6 +190,7 @@ export interface AdvisorPrivateMessage {
   threadType?: string;
   flaggedMessageRef?: string;
   visibleTo?: string[];
+  replyTo?: ReplyTo | null;
 }
 
 export interface Resource {

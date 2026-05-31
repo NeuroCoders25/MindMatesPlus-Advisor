@@ -2,10 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   MessageSquare, Search, Users, RefreshCw,
   AlertTriangle, CheckCircle, X, XCircle, Send, Loader2, Lock,
-  Sparkles, ShieldAlert, Brain,
+  Sparkles, ShieldAlert, Brain, CornerUpLeft,
 } from 'lucide-react';
 import ChatViewer from '../components/ChatViewer';
-import { PeerGroup, LiveChatMessage, AdvisorPrivateMessage } from '../types';
+import ReplyPreview from '../components/ReplyPreview';
+import QuotedMessage from '../components/QuotedMessage';
+import { PeerGroup, LiveChatMessage, AdvisorPrivateMessage, ReplyTo } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { db } from '../lib/firebase';
@@ -28,6 +30,7 @@ import {
   detectConflict,
   generateAIPrivateReply,
 } from '../lib/groq';
+import { encryptText, decryptBatch, safeText, EncryptedMessage } from '../services/cryptoService';
 
 const GROUPS_COLLECTION = 'peer_groups';
 const MESSAGES_SUBCOLLECTION = 'chatMessages';
@@ -70,6 +73,7 @@ function parseMessage(id: string, data: Record<string, unknown>): LiveChatMessag
     reviewedBy: (data.reviewedBy as string) ?? undefined,
     reviewedAt: toDate(data.reviewedAt),
     rejectionReason: (data.rejectionReason as string | null) ?? null,
+    replyTo: (data.replyTo as ReplyTo | undefined | null) ?? null,
   };
 }
 
@@ -82,6 +86,7 @@ function parsePrivateMessage(id: string, data: Record<string, unknown>): Advisor
     text: (data.text as string) ?? '',
     createdAt: toDate(data.createdAt ?? data.timestamp),
     isRead: Boolean(data.isRead ?? false),
+    replyTo: (data.replyTo as ReplyTo | undefined | null) ?? null,
   };
 }
 
@@ -134,6 +139,11 @@ export default function ChatReview() {
   const [aiReplyLoading, setAiReplyLoading] = useState(false);
   const [aiReplySuggestion, setAiReplySuggestion] = useState<string | null>(null);
 
+  // Reply-to state for the public group composer
+  const [replyingToGroupMsg, setReplyingToGroupMsg] = useState<LiveChatMessage | null>(null);
+  // Reply-to state for the private thread composer
+  const [replyingToPrivateMsg, setReplyingToPrivateMsg] = useState<AdvisorPrivateMessage | null>(null);
+
   // Tracks which message IDs we've already run conflict detection on
   const lastCheckedMsgRef = useRef<Set<string>>(new Set());
   const conflictInitializedRef = useRef(false);
@@ -144,13 +154,14 @@ export default function ChatReview() {
     privateMsgsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [privateMessages]);
 
-  // Reset all AI state when group changes
+  // Reset all AI state and reply state when group changes
   useEffect(() => {
     lastCheckedMsgRef.current = new Set();
     conflictInitializedRef.current = false;
     setSummary(null);
     setSummaryVisible(false);
     setAiReplySuggestion(null);
+    setReplyingToGroupMsg(null);
   }, [selectedGroup?.id]);
 
   // Pending flagged counts badge for group list
@@ -222,25 +233,93 @@ export default function ChatReview() {
     const messagesRef = collection(db, GROUPS_COLLECTION, selectedGroup.id, MESSAGES_SUBCOLLECTION);
     const q = query(messagesRef, orderBy('timestamp', 'asc'));
 
+    let inFlightMsgs = false;
     const unsubscribe = onSnapshot(
       q,
-      (snap) => {
-        const fetched: LiveChatMessage[] = snap.docs.map((doc) =>
-          parseMessage(doc.id, doc.data() as Record<string, unknown>)
-        );
-        setMessages(fetched);
-        setSelectedFlaggedMsg(prev => {
-          if (!prev) return null;
-          return fetched.find(m => m.id === prev.id) ?? prev;
-        });
-        setLoadingMessages(false);
-        setConnected(true);
+      async (snap) => {
+        if (inFlightMsgs) return;
+        inFlightMsgs = true;
+        try {
+          const rawDocs = snap.docs;
+          const rawData = rawDocs.map((d) => d.data() as Record<string, unknown>);
+
+          // Interim: set crash-safe state immediately so React never sees raw objects
+          setMessages(rawDocs.map((d, i) => {
+            const rawReplyTo = rawData[i].replyTo as Record<string, unknown> | undefined | null;
+            return parseMessage(d.id, {
+              ...rawData[i],
+              text: safeText(rawData[i].text ?? rawData[i].message ?? rawData[i].content),
+              replyTo: rawReplyTo
+                ? { ...rawReplyTo, snippet: safeText(rawReplyTo.snippet) }
+                : null,
+            });
+          }));
+          setLoadingMessages(false);
+          setConnected(true);
+
+          const texts = rawData.map(
+            (d) => (d.text ?? d.message ?? d.content ?? '') as EncryptedMessage | string,
+          );
+          const snippets = rawData.map(
+            (d) => ((d.replyTo as Record<string, unknown> | undefined)?.snippet ?? '') as EncryptedMessage | string,
+          );
+          const decrypted = await decryptBatch([...texts, ...snippets]);
+          const n = rawDocs.length;
+          const fetched: LiveChatMessage[] = rawDocs.map((d, i) => {
+            const rawReplyTo = rawData[i].replyTo as Record<string, unknown> | undefined | null;
+            const data: Record<string, unknown> = {
+              ...rawData[i],
+              text: decrypted[i],
+              replyTo: rawReplyTo
+                ? {
+                    messageId: rawReplyTo.messageId as string,
+                    snippet: decrypted[n + i],
+                    senderName: rawReplyTo.senderName as string,
+                    senderId: rawReplyTo.senderId as string,
+                  }
+                : null,
+            };
+            return parseMessage(d.id, data);
+          });
+          setMessages(fetched);
+          setSelectedFlaggedMsg(prev => {
+            if (!prev) return null;
+            return fetched.find(m => m.id === prev.id) ?? prev;
+          });
+        } finally {
+          inFlightMsgs = false;
+        }
       },
       (err) => {
         console.error('Error fetching messages:', err);
         getDocs(messagesRef)
-          .then((snap) => {
-            setMessages(snap.docs.map((doc) => parseMessage(doc.id, doc.data() as Record<string, unknown>)));
+          .then(async (snap) => {
+            const rawDocs = snap.docs;
+            const rawData = rawDocs.map((d) => d.data() as Record<string, unknown>);
+            const texts = rawData.map(
+              (d) => (d.text ?? d.message ?? d.content ?? '') as EncryptedMessage | string,
+            );
+            const snippets = rawData.map(
+              (d) => ((d.replyTo as Record<string, unknown> | undefined)?.snippet ?? '') as EncryptedMessage | string,
+            );
+            const decrypted = await decryptBatch([...texts, ...snippets]);
+            const n = rawDocs.length;
+            setMessages(rawDocs.map((d, i) => {
+              const rawReplyTo = rawData[i].replyTo as Record<string, unknown> | undefined | null;
+              const data: Record<string, unknown> = {
+                ...rawData[i],
+                text: decrypted[i],
+                replyTo: rawReplyTo
+                  ? {
+                      messageId: rawReplyTo.messageId as string,
+                      snippet: decrypted[n + i],
+                      senderName: rawReplyTo.senderName as string,
+                      senderId: rawReplyTo.senderId as string,
+                    }
+                  : null,
+              };
+              return parseMessage(d.id, data);
+            }));
           })
           .catch(() => setError('Could not load messages.'));
         setLoadingMessages(false);
@@ -265,10 +344,53 @@ export default function ChatReview() {
       ),
       orderBy('timestamp', 'asc'),
     );
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setPrivateMessages(
-        snap.docs.map(d => parsePrivateMessage(d.id, d.data() as Record<string, unknown>))
-      );
+    let inFlightThread = false;
+    const unsubscribe = onSnapshot(q, async (snap) => {
+      if (inFlightThread) return;
+      inFlightThread = true;
+      try {
+        const rawDocs = snap.docs;
+        const rawData = rawDocs.map((d) => d.data() as Record<string, unknown>);
+
+        // Interim: crash-safe placeholder state
+        setPrivateMessages(rawDocs.map((d, i) => {
+          const rawReplyTo = rawData[i].replyTo as Record<string, unknown> | undefined | null;
+          return parsePrivateMessage(d.id, {
+            ...rawData[i],
+            text: safeText(rawData[i].text),
+            replyTo: rawReplyTo
+              ? { ...rawReplyTo, snippet: safeText(rawReplyTo.snippet) }
+              : null,
+          });
+        }));
+
+        const texts = rawData.map((d) => (d.text ?? '') as EncryptedMessage | string);
+        const snippets = rawData.map(
+          (d) => ((d.replyTo as Record<string, unknown> | undefined)?.snippet ?? '') as EncryptedMessage | string,
+        );
+        const decrypted = await decryptBatch([...texts, ...snippets]);
+        const n = rawDocs.length;
+        setPrivateMessages(
+          rawDocs.map((d, i) => {
+            const rawReplyTo = rawData[i].replyTo as Record<string, unknown> | undefined | null;
+            const data: Record<string, unknown> = {
+              ...rawData[i],
+              text: decrypted[i],
+              replyTo: rawReplyTo
+                ? {
+                    messageId: rawReplyTo.messageId as string,
+                    snippet: decrypted[n + i],
+                    senderName: rawReplyTo.senderName as string,
+                    senderId: rawReplyTo.senderId as string,
+                  }
+                : null,
+            };
+            return parsePrivateMessage(d.id, data);
+          }),
+        );
+      } finally {
+        inFlightThread = false;
+      }
     }, (err) => {
       console.error('Error fetching private thread:', err);
     });
@@ -366,6 +488,7 @@ export default function ChatReview() {
     setReplyText('');
     setRejectionReasonText('');
     setAiReplySuggestion(null);
+    setReplyingToPrivateMsg(null);
   };
 
   const handleApprove = async () => {
@@ -434,20 +557,32 @@ export default function ChatReview() {
         MESSAGES_SUBCOLLECTION, selectedFlaggedMsg.id,
         PRIVATE_THREAD_SUBCOLLECTION,
       );
+      const encryptedReply = await encryptText(replyText.trim());
+      let replyToField = null;
+      if (replyingToPrivateMsg) {
+        replyToField = {
+          messageId: replyingToPrivateMsg.id,
+          snippet: await encryptText(replyingToPrivateMsg.text.slice(0, 80)),
+          senderName: replyingToPrivateMsg.senderName,
+          senderId: replyingToPrivateMsg.senderId,
+        };
+      }
       await addDoc(privateThreadRef, {
         senderId:          currentUser.uid,
         senderName:        advisorProfile?.name ?? 'Advisor',
         senderRole:        'advisor',
         receiverId:        selectedFlaggedMsg.senderId,
         receiverName:      selectedFlaggedMsg.senderName,
-        text:              replyText.trim(),
+        text:              encryptedReply,
         timestamp:         serverTimestamp(),
         isPrivate:         true,
         threadType:        'advisor_private_reply',
         flaggedMessageRef: selectedFlaggedMsg.id,
         visibleTo:         [currentUser.uid, selectedFlaggedMsg.senderId],
+        ...(replyToField ? { replyTo: replyToField } : {}),
       });
       setReplyText('');
+      setReplyingToPrivateMsg(null);
     } catch (err) {
       console.error('Error sending private reply:', err);
     } finally {
@@ -460,14 +595,26 @@ export default function ChatReview() {
     setSendingPublicMessage(true);
     try {
       const messagesRef = collection(db, GROUPS_COLLECTION, selectedGroup.id, MESSAGES_SUBCOLLECTION);
+      const encryptedPublic = await encryptText(publicMessageText.trim());
+      let replyToField = null;
+      if (replyingToGroupMsg) {
+        replyToField = {
+          messageId: replyingToGroupMsg.id,
+          snippet: await encryptText(replyingToGroupMsg.text.slice(0, 80)),
+          senderName: replyingToGroupMsg.senderName,
+          senderId: replyingToGroupMsg.senderId,
+        };
+      }
       await addDoc(messagesRef, {
         senderId:   currentUser.uid,
         senderName: advisorProfile?.name ?? 'Advisor',
-        text:       publicMessageText.trim(),
+        text:       encryptedPublic,
         timestamp:  serverTimestamp(),
         isFlagged:  false,
+        ...(replyToField ? { replyTo: replyToField } : {}),
       });
       setPublicMessageText('');
+      setReplyingToGroupMsg(null);
     } catch (err) {
       console.error('Error sending public message:', err);
     } finally {
@@ -863,10 +1010,18 @@ export default function ChatReview() {
                     selectedFlaggedMsgId={selectedFlaggedMsg?.id}
                     onFlaggedMessageClick={handleFlaggedMessageClick}
                     onDeleteMessage={handleDeleteMessage}
+                    onReply={(msg) => setReplyingToGroupMsg(msg)}
                   />
                 </div>
 
                 <div className="p-4 border-t border-slate-100 shrink-0">
+                  {replyingToGroupMsg && (
+                    <ReplyPreview
+                      senderName={replyingToGroupMsg.senderName}
+                      snippet={replyingToGroupMsg.text}
+                      onCancel={() => setReplyingToGroupMsg(null)}
+                    />
+                  )}
                   <div className="flex gap-2 items-center">
                     <input
                       type="text"
@@ -941,7 +1096,7 @@ export default function ChatReview() {
                       })()}
                     </div>
                     <p className="text-sm font-semibold text-slate-800 line-clamp-2">
-                      "{selectedFlaggedMsg.text}"
+                      "{safeText(selectedFlaggedMsg.text)}"
                     </p>
                     <p className="text-[10px] text-slate-500 mt-1">
                       by <span className="font-bold">{selectedFlaggedMsg.senderName}</span>
@@ -1119,7 +1274,7 @@ export default function ChatReview() {
                       <span className="text-[10px] font-bold text-red-600 uppercase tracking-wide">Flagged message · context</span>
                     </div>
                     <p className="text-xs text-red-800 font-medium leading-snug line-clamp-3">
-                      "{selectedFlaggedMsg.text}"
+                      "{safeText(selectedFlaggedMsg.text)}"
                     </p>
                     <div className="flex items-center gap-1.5 mt-1.5">
                       <span className="text-[10px] text-red-500">
@@ -1149,17 +1304,39 @@ export default function ChatReview() {
                       privateMessages.map((msg) => {
                         const isMe = msg.senderRole === 'advisor';
                         return (
-                          <div key={msg.id} className={cn('flex flex-col gap-0.5', isMe ? 'items-end' : 'items-start')}>
-                            <span className="text-[9px] font-semibold text-slate-400 px-1">
-                              {isMe ? (advisorProfile?.name ?? 'You') : msg.senderName}
-                            </span>
+                          <div
+                            id={`msg-${msg.id}`}
+                            key={msg.id}
+                            className={cn('group flex flex-col gap-0.5', isMe ? 'items-end' : 'items-start')}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9px] font-semibold text-slate-400 px-1">
+                                {isMe ? (advisorProfile?.name ?? 'You') : msg.senderName}
+                              </span>
+                              <button
+                                onClick={() => setReplyingToPrivateMsg(msg)}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-slate-300 hover:text-indigo-500 rounded"
+                                title="Reply"
+                              >
+                                <CornerUpLeft size={10} />
+                              </button>
+                            </div>
                             <div className={cn(
                               'max-w-[85%] px-3 py-2 rounded-2xl text-xs shadow-sm',
                               isMe
                                 ? 'bg-brand-500 text-white rounded-tr-sm'
                                 : 'bg-white border border-slate-200 text-slate-700 rounded-tl-sm'
                             )}>
-                              <p className="leading-relaxed">{msg.text}</p>
+                              {msg.replyTo && (
+                                <QuotedMessage
+                                  replyTo={msg.replyTo}
+                                  onScrollTo={(id) => {
+                                    document.getElementById(`msg-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  }}
+                                  variant={isMe ? 'light' : 'default'}
+                                />
+                              )}
+                              <p className="leading-relaxed">{safeText(msg.text)}</p>
                               <p className={cn(
                                 'text-[9px] mt-1 opacity-60',
                                 isMe ? 'text-right' : 'text-left'
@@ -1175,6 +1352,13 @@ export default function ChatReview() {
                   </div>
 
                   <div className="p-3 border-t border-slate-100 bg-white shrink-0">
+                    {replyingToPrivateMsg && (
+                      <ReplyPreview
+                        senderName={replyingToPrivateMsg.senderName}
+                        snippet={replyingToPrivateMsg.text}
+                        onCancel={() => setReplyingToPrivateMsg(null)}
+                      />
+                    )}
                     <div className="flex gap-2 items-center">
                       <input
                         type="text"

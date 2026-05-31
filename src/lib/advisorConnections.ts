@@ -12,7 +12,8 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { AdvisorConnection, CaseMessage } from '../types';
+import { AdvisorConnection, CaseMessage, ReplyToPayload } from '../types';
+import { encryptText, decryptBatch, safeText, EncryptedMessage } from '../services/cryptoService';
 
 export const APPROVED_CATEGORIES = [
   'Wellness - Thriving',
@@ -426,13 +427,61 @@ export function listenToCaseMessages(
     collection(db, 'advisorConnections', connectionId, 'messages'),
     orderBy('createdAt', 'asc')
   );
-  return onSnapshot(q, (snap) => {
-    onUpdate(
-      snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<CaseMessage, 'id'>),
-      }))
-    );
+  let inFlight = false;
+  return onSnapshot(q, async (snap) => {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      const rawDocs = snap.docs.map((d) => ({ id: d.id, data: d.data() }));
+
+      // Interim: set crash-safe placeholder state immediately
+      onUpdate(
+        rawDocs.map((d) => {
+          const rawReplyTo = d.data.replyTo as Record<string, unknown> | undefined | null;
+          return {
+            id: d.id,
+            ...(d.data as Omit<CaseMessage, 'id'>),
+            messageText: safeText(d.data.messageText),
+            replyTo: rawReplyTo
+              ? {
+                  messageId: rawReplyTo.messageId as string,
+                  snippet: safeText(rawReplyTo.snippet),
+                  senderName: rawReplyTo.senderName as string,
+                  senderId: rawReplyTo.senderId as string,
+                }
+              : null,
+          };
+        })
+      );
+
+      // Final: decrypt properly
+      const texts = rawDocs.map((d) => (d.data.messageText ?? '') as EncryptedMessage | string);
+      const snippets = rawDocs.map(
+        (d) => ((d.data.replyTo as Record<string, unknown> | undefined)?.snippet ?? '') as EncryptedMessage | string
+      );
+      const decrypted = await decryptBatch([...texts, ...snippets]);
+      const n = rawDocs.length;
+      onUpdate(
+        rawDocs.map((d, i) => {
+          const rawReplyTo = d.data.replyTo as Record<string, unknown> | undefined | null;
+          return {
+            id: d.id,
+            ...(d.data as Omit<CaseMessage, 'id'>),
+            messageText: decrypted[i],
+            replyTo: rawReplyTo
+              ? {
+                  messageId: rawReplyTo.messageId as string,
+                  snippet: decrypted[n + i],
+                  senderName: rawReplyTo.senderName as string,
+                  senderId: rawReplyTo.senderId as string,
+                }
+              : null,
+          };
+        })
+      );
+    } finally {
+      inFlight = false;
+    }
   });
 }
 
@@ -440,19 +489,36 @@ export async function sendAdvisorCaseMessage(
   connectionId: string,
   advisorId: string,
   userId: string,
-  text: string
+  text: string,
+  replyTo?: ReplyToPayload | null
 ): Promise<void> {
+  const encrypted = await encryptText(text);
+  let replyToField: {
+    messageId: string;
+    snippet: EncryptedMessage | string;
+    senderName: string;
+    senderId: string;
+  } | null = null;
+  if (replyTo) {
+    replyToField = {
+      messageId: replyTo.messageId,
+      snippet: await encryptText(replyTo.snippetPlain.slice(0, 80)),
+      senderName: replyTo.senderName,
+      senderId: replyTo.senderId,
+    };
+  }
   await addDoc(collection(db, 'advisorConnections', connectionId, 'messages'), {
     senderId: advisorId,
     senderRole: 'advisor',
     receiverId: userId,
-    messageText: text,
+    messageText: encrypted,
     messageType: 'text',
     createdAt: serverTimestamp(),
     isRead: false,
+    ...(replyToField ? { replyTo: replyToField } : {}),
   });
   await updateDoc(doc(db, 'advisorConnections', connectionId), {
-    lastMessage: text,
+    lastMessage: encrypted,
     lastMessageSenderId: advisorId,
     lastMessageAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, MessageSquare, Send, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { X, MessageSquare, Send, ShieldCheck, CheckCircle2, CornerUpLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   collection,
@@ -17,8 +17,12 @@ import {
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { Case } from '../types';
+import { encryptText, decryptBatch, safeText, EncryptedMessage } from '../services/cryptoService';
 import RiskBadge from './RiskBadge';
 import { cn } from '../lib/utils';
+import ReplyPreview from './ReplyPreview';
+import QuotedMessage from './QuotedMessage';
+import { ReplyTo } from '../types';
 
 interface DirectChatModalProps {
   isOpen: boolean;
@@ -34,6 +38,7 @@ interface Message {
   senderRole: string;
   createdAt: any;
   isRead: boolean;
+  replyTo?: ReplyTo | null;
 }
 
 export default function DirectChatModal({ isOpen, onClose, caseData, onViewProfile }: DirectChatModalProps) {
@@ -42,7 +47,15 @@ export default function DirectChatModal({ isOpen, onClose, caseData, onViewProfi
   const [newMessage, setNewMessage] = useState('');
   const [aiValidation, setAiValidation] = useState<'approved' | 'disapproved' | null>(null);
   const [reviewed, setReviewed] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToMessage = (id: string) => {
+    document.getElementById(`msg-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedMsgId(id);
+    setTimeout(() => setHighlightedMsgId(null), 1500);
+  };
 
   const chatId = currentUser ? `advisor_${currentUser.uid}_user_${caseData.userId}` : null;
 
@@ -72,15 +85,60 @@ export default function DirectChatModal({ isOpen, onClose, caseData, onViewProfi
       return;
     }
     const q = query(collection(db, 'privateChats', chatId, 'messages'), orderBy('createdAt', 'asc'));
-    const unsub = onSnapshot(q, (snap) => {
-      setMessages(snap.docs.map(d => ({
-        id: d.id,
-        messageText: d.data().messageText || d.data().text || '',
-        senderId: d.data().senderId || '',
-        senderRole: d.data().senderRole || '',
-        createdAt: d.data().createdAt || d.data().timestamp,
-        isRead: d.data().isRead || false,
-      })));
+    let inFlight = false;
+    const unsub = onSnapshot(q, async (snap) => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const rawDocs = snap.docs;
+        const rawData = rawDocs.map((d) => d.data());
+
+        // Interim: crash-safe placeholder state immediately
+        setMessages(rawDocs.map((d, i) => {
+          const rawReplyTo = rawData[i].replyTo as Record<string, unknown> | undefined | null;
+          return {
+            id: d.id,
+            messageText: safeText(rawData[i].messageText ?? rawData[i].text),
+            senderId: rawData[i].senderId || '',
+            senderRole: rawData[i].senderRole || '',
+            createdAt: rawData[i].createdAt || rawData[i].timestamp,
+            isRead: rawData[i].isRead || false,
+            replyTo: rawReplyTo
+              ? { messageId: rawReplyTo.messageId as string, snippet: safeText(rawReplyTo.snippet), senderName: rawReplyTo.senderName as string, senderId: rawReplyTo.senderId as string }
+              : null,
+          };
+        }));
+
+        const texts = rawData.map(
+          (d) => (d.messageText ?? d.text ?? '') as EncryptedMessage | string,
+        );
+        const snippets = rawData.map(
+          (d) => ((d.replyTo as Record<string, unknown> | undefined)?.snippet ?? '') as EncryptedMessage | string,
+        );
+        const decrypted = await decryptBatch([...texts, ...snippets]);
+        const n = rawDocs.length;
+        setMessages(rawDocs.map((d, i) => {
+          const rawReplyTo = rawData[i].replyTo as Record<string, unknown> | undefined | null;
+          return {
+            id: d.id,
+            messageText: decrypted[i],
+            senderId: rawData[i].senderId || '',
+            senderRole: rawData[i].senderRole || '',
+            createdAt: rawData[i].createdAt || rawData[i].timestamp,
+            isRead: rawData[i].isRead || false,
+            replyTo: rawReplyTo
+              ? {
+                  messageId: rawReplyTo.messageId as string,
+                  snippet: decrypted[n + i],
+                  senderName: rawReplyTo.senderName as string,
+                  senderId: rawReplyTo.senderId as string,
+                }
+              : null,
+          };
+        }));
+      } finally {
+        inFlight = false;
+      }
     });
     return unsub;
   }, [isOpen, chatId]);
@@ -95,6 +153,7 @@ export default function DirectChatModal({ isOpen, onClose, caseData, onViewProfi
       setAiValidation(null);
       setReviewed(false);
       setNewMessage('');
+      setReplyingTo(null);
     }
   }, [isOpen, caseData.userId]);
 
@@ -102,20 +161,33 @@ export default function DirectChatModal({ isOpen, onClose, caseData, onViewProfi
     e.preventDefault();
     if (!newMessage.trim() || !currentUser || !chatId) return;
     const text = newMessage.trim();
+    const pendingReply = replyingTo;
     setNewMessage('');
+    setReplyingTo(null);
     try {
       const chatRef = doc(db, 'privateChats', chatId);
+      const encrypted = await encryptText(text);
+      let replyToField = null;
+      if (pendingReply) {
+        replyToField = {
+          messageId: pendingReply.id,
+          snippet: await encryptText(pendingReply.messageText.slice(0, 80)),
+          senderName: pendingReply.senderRole === 'advisor' ? 'Advisor' : caseData.userName,
+          senderId: pendingReply.senderId,
+        };
+      }
       await addDoc(collection(db, 'privateChats', chatId, 'messages'), {
         senderId: currentUser.uid,
         senderRole: 'advisor',
         receiverId: caseData.userId,
-        messageText: text,
+        messageText: encrypted,
         messageType: 'text',
         createdAt: serverTimestamp(),
         isRead: false,
+        ...(replyToField ? { replyTo: replyToField } : {}),
       });
       await updateDoc(chatRef, {
-        lastMessage: text,
+        lastMessage: encrypted,
         lastMessageSenderId: currentUser.uid,
         lastMessageAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -235,28 +307,53 @@ export default function DirectChatModal({ isOpen, onClose, caseData, onViewProfi
                 ) : (
                   messages.map((msg) => {
                     const isAdvisor = msg.senderRole === 'advisor';
+                    const isHighlighted = highlightedMsgId === msg.id;
                     return (
                       <motion.div
                         key={msg.id}
+                        id={`msg-${msg.id}`}
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className={cn('flex', isAdvisor ? 'justify-end' : 'justify-start')}
+                        className={cn(
+                          'flex group',
+                          isAdvisor ? 'justify-end' : 'justify-start',
+                          isHighlighted && 'ring-2 ring-indigo-400 ring-offset-2 rounded-2xl'
+                        )}
                       >
                         <div className={cn('max-w-[75%]', isAdvisor ? 'items-end' : 'items-start')}>
-                          <p className={cn(
-                            'text-[10px] font-bold uppercase tracking-wide mb-1',
-                            isAdvisor ? 'text-right text-brand-400' : 'text-left text-slate-400'
+                          <div className={cn(
+                            'flex items-center gap-1.5 mb-1',
+                            isAdvisor ? 'justify-end' : 'justify-start'
                           )}>
-                            {isAdvisor ? 'ADVISOR' : 'USER'}{' '}
-                            <span className="font-normal normal-case tracking-normal">{formatTime(msg.createdAt)}</span>
-                          </p>
+                            <p className={cn(
+                              'text-[10px] font-bold uppercase tracking-wide',
+                              isAdvisor ? 'text-brand-400' : 'text-slate-400'
+                            )}>
+                              {isAdvisor ? 'ADVISOR' : 'USER'}{' '}
+                              <span className="font-normal normal-case tracking-normal">{formatTime(msg.createdAt)}</span>
+                            </p>
+                            <button
+                              onClick={() => setReplyingTo(msg)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-slate-300 hover:text-indigo-500 rounded"
+                              title="Reply"
+                            >
+                              <CornerUpLeft size={11} />
+                            </button>
+                          </div>
                           <div className={cn(
                             'px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm',
                             isAdvisor
                               ? 'bg-brand-500 text-white rounded-tr-sm'
                               : 'bg-slate-100 text-slate-700 rounded-tl-sm'
                           )}>
-                            {msg.messageText}
+                            {msg.replyTo && (
+                              <QuotedMessage
+                                replyTo={msg.replyTo}
+                                onScrollTo={scrollToMessage}
+                                variant={isAdvisor ? 'light' : 'default'}
+                              />
+                            )}
+                            {safeText(msg.messageText)}
                           </div>
                         </div>
                       </motion.div>
@@ -282,6 +379,13 @@ export default function DirectChatModal({ isOpen, onClose, caseData, onViewProfi
 
               {/* Message Input */}
               <form onSubmit={handleSend} className="px-5 pb-4 shrink-0">
+                {replyingTo && (
+                  <ReplyPreview
+                    senderName={replyingTo.senderRole === 'advisor' ? 'Advisor' : caseData.userName}
+                    snippet={replyingTo.messageText}
+                    onCancel={() => setReplyingTo(null)}
+                  />
+                )}
                 <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5">
                   <input
                     type="text"
