@@ -715,9 +715,8 @@ export default function ChatReview() {
   // ── Derived state ─────────────────────────────────────────────────────────
 
   const visibleMessages = messages.filter(msg => {
-    if (msg.deletedByAdvisor) return true;
-    if (!msg.isFlagged) return true;
     if (reviewFilter === 'all') return true;
+    if (!msg.isFlagged) return false;
     const status = msg.reviewStatus ?? (msg.advisorApproved ? 'approved' : 'pending');
     return status === reviewFilter;
   });

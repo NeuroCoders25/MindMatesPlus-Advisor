@@ -91,8 +91,6 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
   const [isFullProfileOpen, setIsFullProfileOpen] = useState(false);
   const [wellnessInput, setWellnessInput] = useState('');
   const [wellnessNote, setWellnessNote] = useState('');
-  const [updatingWellness, setUpdatingWellness] = useState(false);
-  const [wellnessSuccess, setWellnessSuccess] = useState(false);
   const [wellnessError, setWellnessError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -149,7 +147,6 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
       setAdvisorNote('');
       setWellnessInput('');
       setWellnessNote('');
-      setWellnessSuccess(false);
       setWellnessError('');
       setReplyingTo(null);
     }
@@ -159,6 +156,23 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
     if (!currentUser || !approvedCategory || isApproved) return;
     setApproving(true);
     try {
+      if (wellnessInput.trim()) {
+        const parsed = parseInt(wellnessInput, 10);
+        if (isNaN(parsed) || parsed < 0 || parsed > 100) {
+          setWellnessError('Enter a valid wellness score between 0 and 100.');
+          return;
+        }
+        setWellnessError('');
+        await updateUserWellnessScoreByAdvisor(
+          connection.userId,
+          currentUser.uid,
+          parsed,
+          wellnessScore,
+          wellnessNote.trim() || undefined
+        );
+        setUserProfile((prev) => ({ ...prev, wellnessScore: parsed }));
+        setWellnessNote('');
+      }
       await approveUserForNormalAccess(
         connection.id,
         connection.userId,
@@ -212,35 +226,7 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
     }
   }
 
-  async function handleUpdateWellnessScore() {
-    const parsed = parseInt(wellnessInput, 10);
-    if (!currentUser || isNaN(parsed) || parsed < 0 || parsed > 100) {
-      setWellnessError('Enter a valid score between 0 and 100.');
-      return;
-    }
-    setUpdatingWellness(true);
-    setWellnessSuccess(false);
-    setWellnessError('');
-    try {
-      await updateUserWellnessScoreByAdvisor(
-        connection.userId,
-        currentUser.uid,
-        parsed,
-        wellnessScore,
-        wellnessNote.trim() || undefined
-      );
-      setUserProfile((prev) => ({ ...prev, wellnessScore: parsed }));
-      setWellnessSuccess(true);
-      setWellnessNote('');
-    } catch (err) {
-      console.error('Error updating wellness score:', err);
-      setWellnessError('Failed to update score. Please try again.');
-    } finally {
-      setUpdatingWellness(false);
-    }
-  }
-
-  // Resolve nickname in order: connection doc → user doc → mentalHealthProfile subcollection.
+// Resolve nickname in order: connection doc → user doc → mentalHealthProfile subcollection.
   // userDoc may be unreadable due to Firestore advisor rules, so fallback to profile subcollection.
   const nickName =
     connection.nickName ||
@@ -460,7 +446,6 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
                       value={wellnessInput}
                       onChange={(e) => {
                         setWellnessInput(e.target.value);
-                        setWellnessSuccess(false);
                         setWellnessError('');
                       }}
                       placeholder="0 – 100"
@@ -473,25 +458,11 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
                       rows={2}
                       className="w-full text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-300 transition-colors resize-none placeholder-slate-300 mb-2"
                     />
-                    {wellnessSuccess && (
-                      <p className="text-[10px] text-emerald-600 font-semibold mb-1.5 flex items-center gap-1">
-                        <CheckCircle2 size={11} />
-                        Mental wellness score updated successfully.
-                      </p>
-                    )}
                     {wellnessError && (
                       <p className="text-[10px] text-red-500 font-semibold mb-1.5">
                         {wellnessError}
                       </p>
                     )}
-                    <button
-                      onClick={handleUpdateWellnessScore}
-                      disabled={updatingWellness || !wellnessInput.trim()}
-                      className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-xs transition-all"
-                    >
-                      <Activity size={13} />
-                      {updatingWellness ? 'Updating…' : 'Update Wellness Score'}
-                    </button>
                   </div>
                 )}
 
