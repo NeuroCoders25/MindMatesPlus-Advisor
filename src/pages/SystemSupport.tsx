@@ -16,7 +16,6 @@ import {
   Settings2,
   FileQuestion,
   LifeBuoy,
-  ArrowUpRight,
   User,
   CalendarDays,
   Tag,
@@ -32,11 +31,14 @@ import {
   serverTimestamp,
   where,
   Timestamp,
+  doc,
+  getDoc,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
+import AdvisorChat from './AdvisorChat';
 import type {
   SupportRequest,
   SupportCategory,
@@ -103,6 +105,36 @@ function getInitials(name: string) {
     .join('');
 }
 
+function getProfileImageUrl(data: Record<string, unknown>) {
+  return (
+    data.profileImageUrl ||
+    data.profilePicture ||
+    data.profile_picture ||
+    data.photoURL ||
+    data.avatarUrl ||
+    data.avatar ||
+    data.imageUrl ||
+    data.image_url ||
+    ''
+  ) as string;
+}
+
+async function getAdminProfileImageUrl(adminId: string, data: Record<string, unknown>) {
+  const directUrl = getProfileImageUrl(data);
+  if (directUrl) return directUrl;
+
+  const fallbackCollections = ['adminProfiles', 'admin', 'users', 'advisors'];
+  for (const collectionName of fallbackCollections) {
+    const snap = await getDoc(doc(db, collectionName, adminId)).catch(() => null);
+    if (snap?.exists()) {
+      const fallbackUrl = getProfileImageUrl(snap.data());
+      if (fallbackUrl) return fallbackUrl;
+    }
+  }
+
+  return '';
+}
+
 function formatTs(ts: unknown): string {
   if (!ts) return '—';
   const d =
@@ -126,6 +158,7 @@ export default function SystemSupport() {
   const [requests, setRequests] = useState<SupportRequest[]>([]);
   const [filterStatus, setFilterStatus] = useState<SupportStatus | 'all'>('all');
   const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
+  const [selectedAdminChatId, setSelectedAdminChatId] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     category: '' as SupportCategory | '',
@@ -141,20 +174,19 @@ export default function SystemSupport() {
   // ── real-time admin availability ──────────────────────────────────────────
   useEffect(() => {
     const q = query(collection(db, 'admins'), orderBy('name', 'asc'));
-    return onSnapshot(q, (snap) => {
-      const list: AdminAvailability[] = [];
-      snap.forEach((d) => {
+    return onSnapshot(q, async (snap) => {
+      const list = await Promise.all(snap.docs.map(async (d) => {
         const data = d.data();
-        list.push({
+        return {
           id: d.id,
           name: data.name || 'Admin',
           email: data.email,
           role: data.role || 'System Admin',
           availability: data.availability ?? 'offline',
-          profileImageUrl: data.profileImageUrl,
+          profileImageUrl: await getAdminProfileImageUrl(d.id, data),
           lastSeen: data.lastSeen,
-        });
-      });
+        } as AdminAvailability;
+      }));
       setAdmins(list);
     });
   }, []);
@@ -410,7 +442,7 @@ export default function SystemSupport() {
                         {/* quick-chat button */}
                         {contactable && (
                           <button
-                            onClick={() => navigate('/chat')}
+                            onClick={() => setSelectedAdminChatId(admin.id)}
                             title="Open chat"
                             className="shrink-0 p-2 rounded-xl text-brand-500 hover:bg-brand-50 transition-all"
                           >
@@ -419,18 +451,9 @@ export default function SystemSupport() {
                         )}
                       </div>
                     );
-                  })}
+                })}
               </div>
             )}
-
-            <button
-              onClick={() => navigate('/chat')}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-brand-200 text-brand-600 text-sm font-semibold hover:bg-brand-50 transition-all"
-            >
-              <MessageSquare size={15} />
-              Open Admin Chat
-              <ArrowUpRight size={14} />
-            </button>
           </div>
 
           {/* legend */}
@@ -465,6 +488,8 @@ export default function SystemSupport() {
               ))}
             </div>
           </div>
+
+          <AdvisorChat embedded initialAdminId={selectedAdminChatId} />
         </div>
 
         {/* ── Right: New Request / History (3 / 5) ─────────────────────── */}

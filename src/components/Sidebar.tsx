@@ -28,7 +28,6 @@ const navItems = [
   { icon: Library, label: 'Resources', path: '/resources' },
   { icon: BarChart3, label: 'AI Insights', path: '/insights' },
   { icon: FileText, label: 'Reports', path: '/reports' },
-  { icon: MessageSquare, label: 'Admin Chats', path: '/chat' },
   { icon: MessagesSquare,  label: 'Advisor Room',   path: '/advisor-room' },
   { icon: HeadphonesIcon, label: 'System Support',  path: '/support' },
   { icon: Settings,       label: 'Settings',        path: '/settings' },
