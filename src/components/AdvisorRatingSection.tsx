@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Star } from 'lucide-react'
 import { Timestamp } from 'firebase/firestore'
 import { useAuth } from '../context/AuthContext'
 import {
-  subscribeAdvisorRatingSummary,
-  subscribeAdvisorReviews,
   AdvisorRating,
   RatingSummary,
+  subscribeAdvisorRatingSummary,
+  subscribeAdvisorReviews,
 } from '../services/advisorRatingService'
 import RatingStars from './RatingStars'
 
@@ -21,24 +21,22 @@ function formatReviewDate(createdAt: Timestamp | null): string {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
 }
 
-export default function AdvisorRatingSection() {
+export function AdvisorRatingSummaryCard({ className = '' }: { className?: string }) {
   const { currentUser } = useAuth()
   const [summary, setSummary] = useState<RatingSummary | null>(null)
-  const [reviews, setReviews] = useState<AdvisorRating[]>([])
   const [distribution, setDistribution] = useState<Record<number, number>>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!currentUser?.uid) return
-    const uid = currentUser.uid
 
-    const unsubSummary = subscribeAdvisorRatingSummary(uid, (s) => {
+    const unsubSummary = subscribeAdvisorRatingSummary(currentUser.uid, (s) => {
       setSummary(s)
       setLoading(false)
     })
 
-    const unsubReviews = subscribeAdvisorReviews(uid, (r, dist) => {
-      setReviews(r)
+    const unsubReviews = subscribeAdvisorReviews(currentUser.uid, (reviews, dist) => {
+      void reviews
       setDistribution(dist)
     })
 
@@ -52,38 +50,29 @@ export default function AdvisorRatingSection() {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
-        <div className="h-5 w-32 bg-slate-200 rounded animate-pulse" />
-        <div className="flex gap-8">
-          <div className="h-24 w-28 bg-slate-200 rounded animate-pulse" />
+      <div className={`bg-white rounded-xl border border-slate-200 p-5 space-y-4 ${className}`}>
+        <div className="h-5 w-28 bg-slate-200 rounded animate-pulse" />
+        <div className="flex gap-6">
+          <div className="h-24 w-24 bg-slate-200 rounded animate-pulse" />
           <div className="flex-1 space-y-2">
             {[5, 4, 3, 2, 1].map((n) => (
               <div key={n} className="h-3 bg-slate-200 rounded animate-pulse" />
             ))}
           </div>
         </div>
-        <div className="h-px bg-slate-100" />
-        <div className="space-y-3">
-          {[1, 2].map((n) => (
-            <div key={n} className="h-14 bg-slate-100 rounded animate-pulse" />
-          ))}
-        </div>
       </div>
     )
   }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6">
-      <h3 className="text-lg font-bold text-slate-800 mb-6">My Ratings</h3>
-
-      {/* Aggregate row */}
-      <div className="flex gap-8 mb-6">
-        {/* Big average */}
-        <div className="text-center pr-8 border-r border-slate-100 shrink-0">
+    <div className={`bg-white rounded-xl border border-slate-200 p-5 ${className}`}>
+      <h3 className="text-base font-bold text-slate-800 mb-5">My Ratings</h3>
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+        <div className="text-center sm:w-32 sm:pr-5 sm:border-r sm:border-slate-100 shrink-0">
           <div className="text-5xl font-bold text-slate-800">
-            {summary?.averageRating?.toFixed(1) ?? '—'}
+            {summary?.averageRating?.toFixed(1) ?? '-'}
           </div>
-          <div className="mt-2">
+          <div className="mt-2 flex justify-center">
             <RatingStars value={summary?.averageRating ?? 0} size={20} />
           </div>
           <div className="text-sm text-slate-500 mt-2">
@@ -91,8 +80,7 @@ export default function AdvisorRatingSection() {
           </div>
         </div>
 
-        {/* Distribution bars */}
-        <div className="flex-1 space-y-2 justify-center flex flex-col">
+        <div className="flex-1 space-y-2">
           {[5, 4, 3, 2, 1].map((level) => {
             const pct = ratingCount > 0 ? ((distribution[level] ?? 0) / ratingCount) * 100 : 0
             return (
@@ -113,15 +101,46 @@ export default function AdvisorRatingSection() {
           })}
         </div>
       </div>
+    </div>
+  )
+}
 
-      <hr className="border-slate-100 mb-6" />
+export default function AdvisorRatingSection() {
+  const { currentUser } = useAuth()
+  const [reviews, setReviews] = useState<AdvisorRating[]>([])
+  const [loading, setLoading] = useState(true)
 
-      {/* Reviews */}
-      <h4 className="text-sm font-bold text-slate-700 mb-4">Recent reviews</h4>
+  useEffect(() => {
+    if (!currentUser?.uid) return
+
+    const unsubReviews = subscribeAdvisorReviews(currentUser.uid, (r) => {
+      setReviews(r)
+      setLoading(false)
+    })
+
+    return () => unsubReviews()
+  }, [currentUser?.uid])
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div className="h-5 w-32 bg-slate-200 rounded animate-pulse" />
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map((n) => (
+            <div key={n} className="h-14 bg-slate-100 rounded animate-pulse" />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-6">
+      <h3 className="text-lg font-bold text-slate-800 mb-4">Recent reviews</h3>
       {reviews.length === 0 ? (
         <p className="text-sm text-slate-400 text-center py-6">No reviews yet</p>
       ) : (
-        <div>
+        <div className="max-h-[720px] overflow-y-auto pr-2">
           {reviews.map((review) => (
             <div key={review.id} className="py-3 border-b border-slate-50 last:border-0">
               <div className="flex items-center justify-between mb-1">

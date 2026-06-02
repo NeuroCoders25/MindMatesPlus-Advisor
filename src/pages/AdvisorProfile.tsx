@@ -6,6 +6,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { uploadImageToImageKit } from '../services/imageUploadService';
 import AvailabilitySelector from '../components/AvailabilitySelector';
+import AdvisorRatingSection, { AdvisorRatingSummaryCard } from '../components/AdvisorRatingSection';
 
 function getInitials(name: string) {
   return name
@@ -161,46 +162,50 @@ export default function AdvisorProfile() {
       <div className="glass-card p-8">
         <h3 className="text-lg font-bold text-slate-800 mb-6">Profile Information</h3>
         <div className="space-y-6">
-          <div className="flex items-center gap-6">
-            <div className="relative w-20 h-20 shrink-0">
-              {previewImageUrl ? (
-                <img
-                  src={previewImageUrl}
-                  alt={name}
-                  className="w-20 h-20 rounded-3xl object-cover border-4 border-white shadow-lg"
-                />
-              ) : (
-                <div className="w-20 h-20 rounded-3xl bg-brand-100 flex items-center justify-center text-brand-600 text-3xl font-bold border-4 border-white shadow-lg">
-                  {initials}
-                </div>
-              )}
-              {isUploading && (
-                <div className="absolute inset-0 rounded-3xl bg-black/40 flex items-center justify-center">
-                  <Loader2 size={24} className="text-white animate-spin" />
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[300px_minmax(0,1fr)] lg:items-stretch">
+            <div className="p-4 flex flex-col items-center justify-center gap-4 min-h-56">
+              <div className="relative w-56 h-56 shrink-0">
+                {previewImageUrl ? (
+                  <img
+                    src={previewImageUrl}
+                    alt={name}
+                    className="w-56 h-56 rounded-3xl object-cover border-4 border-white shadow-lg"
+                  />
+                ) : (
+                  <div className="w-56 h-56 rounded-3xl bg-brand-100 flex items-center justify-center text-brand-600 text-7xl font-bold border-4 border-white shadow-lg">
+                    {initials}
+                  </div>
+                )}
+                {isUploading && (
+                  <div className="absolute inset-0 rounded-3xl bg-black/40 flex items-center justify-center">
+                    <Loader2 size={24} className="text-white animate-spin" />
+                  </div>
+                )}
+              </div>
+              {isEditing && (
+                <div className="flex flex-col items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePhotoChange}
+                  />
+                  <button
+                    type="button"
+                    disabled={isUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 disabled:opacity-50 transition-colors flex items-center gap-2"
+                  >
+                    <Upload size={14} />
+                    Change Photo
+                  </button>
+                  {photoError && <p className="text-xs text-red-500">{photoError}</p>}
                 </div>
               )}
             </div>
-            {isEditing && (
-              <div className="flex flex-col gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handlePhotoChange}
-                />
-                <button
-                  type="button"
-                  disabled={isUploading}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 disabled:opacity-50 transition-colors flex items-center gap-2"
-                >
-                  <Upload size={14} />
-                  Change Photo
-                </button>
-                {photoError && <p className="text-xs text-red-500">{photoError}</p>}
-              </div>
-            )}
+
+            <AdvisorRatingSummaryCard className="min-h-56" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -300,6 +305,8 @@ export default function AdvisorProfile() {
       </div>
 
       <AvailabilitySelector />
+
+      {!isEditing && <AdvisorRatingSection />}
 
       <AnimatePresence>
         {isEditing && (
