@@ -62,17 +62,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       about: extra?.about ?? '',
       isModerator: extra?.isModerator ?? false,
       profileImageUrl: extra?.profileImageUrl ?? '',
+      availability: 'online',
     });
-    setAdvisorProfile({ name, role, email, yearsOfExperience: extra?.yearsOfExperience, qualifications: extra?.qualifications ?? '', about: extra?.about ?? '', isModerator: extra?.isModerator ?? false, profileImageUrl: extra?.profileImageUrl ?? '' });
+    setAdvisorProfile({ name, role, email, yearsOfExperience: extra?.yearsOfExperience, qualifications: extra?.qualifications ?? '', about: extra?.about ?? '', isModerator: extra?.isModerator ?? false, profileImageUrl: extra?.profileImageUrl ?? '', availability: 'online' });
   }
 
   async function login(email: string, password: string) {
-    await signInWithEmailAndPassword(auth, email, password);
+    const { user } = await signInWithEmailAndPassword(auth, email, password);
+    try {
+      await updateDoc(doc(db, 'advisors', user.uid), { availability: 'online' });
+    } catch {
+      // Availability is best-effort; auth state still drives the local UI.
+    }
   }
 
-  function logout() {
-    setAdvisorProfile(null);
-    return signOut(auth);
+  async function logout() {
+    const user = currentUser ?? auth.currentUser;
+    try {
+      if (user) {
+        await updateDoc(doc(db, 'advisors', user.uid), { availability: 'offline' });
+      }
+    } catch {
+      // Sign out should still complete even if the status write fails.
+    } finally {
+      setAdvisorProfile(null);
+      await signOut(auth);
+    }
   }
 
   function updateAdvisorProfile(updates: Partial<AdvisorProfile>) {

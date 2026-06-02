@@ -17,10 +17,9 @@ import { listenToCriticalCases } from '../lib/advisorConnections';
 import { availabilityDotClass, availabilityLabel } from './AvailabilitySelector';
 
 const AVAILABILITY_OPTIONS: { value: AvailabilityStatus; label: string; dot: string }[] = [
-  { value: 'online',  label: 'Online',  dot: 'bg-emerald-500' },
-  { value: 'busy',    label: 'Busy',    dot: 'bg-amber-500'   },
-  { value: 'away',    label: 'Away',    dot: 'bg-slate-400'   },
-  { value: 'offline', label: 'Offline', dot: 'bg-slate-300'   },
+  { value: 'online', label: 'Auto', dot: 'bg-emerald-500' },
+  { value: 'busy', label: 'Busy', dot: 'bg-amber-500' },
+  { value: 'away', label: 'Away', dot: 'bg-slate-400' },
 ];
 
 // ── Tiny local helpers ────────────────────────────────────────────────────────
@@ -306,7 +305,6 @@ export default function Navbar() {
 
           {profileOpen && (
             <div className="absolute right-0 mt-2 w-52 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-50">
-              {/* Availability quick-change */}
               <div className="px-3 pt-3 pb-2">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">Set Status</p>
                 <div className="space-y-0.5">
@@ -319,7 +317,7 @@ export default function Navbar() {
                         disabled={savingAvailability}
                         className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors ${
                           isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50 font-medium'
-                        }`}
+                        } ${savingAvailability ? 'opacity-70 cursor-not-allowed' : ''}`}
                       >
                         <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${opt.dot}`} />
                         {opt.label}

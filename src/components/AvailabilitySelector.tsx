@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import type { AvailabilityStatus } from '../context/AuthContext';
@@ -15,8 +15,8 @@ const OPTIONS: {
 }[] = [
   {
     value: 'online',
-    label: 'Online',
-    description: 'Available for immediate response',
+    label: 'Auto',
+    description: 'Online while signed in, offline after sign out',
     dot: 'bg-emerald-500',
     ring: 'ring-emerald-200',
     bg: 'bg-emerald-50',
@@ -25,7 +25,7 @@ const OPTIONS: {
   {
     value: 'busy',
     label: 'Busy',
-    description: 'Occupied — may respond with delay',
+    description: 'Occupied and may respond with delay',
     dot: 'bg-amber-500',
     ring: 'ring-amber-200',
     bg: 'bg-amber-50',
@@ -34,20 +34,11 @@ const OPTIONS: {
   {
     value: 'away',
     label: 'Away',
-    description: 'Temporarily away from portal',
+    description: 'Temporarily away from the portal',
     dot: 'bg-slate-400',
     ring: 'ring-slate-200',
     bg: 'bg-slate-50',
     border: 'border-slate-200',
-  },
-  {
-    value: 'offline',
-    label: 'Offline',
-    description: 'Not currently logged in',
-    dot: 'bg-slate-300',
-    ring: 'ring-slate-100',
-    bg: 'bg-white',
-    border: 'border-slate-100',
   },
 ];
 
@@ -92,7 +83,7 @@ export default function AvailabilitySelector() {
         </div>
         <div>
           <h3 className="text-lg font-bold text-slate-800">My Availability</h3>
-          <p className="text-xs text-slate-400 mt-0.5">Visible to users and admins in chat</p>
+          <p className="text-xs text-slate-400 mt-0.5">Auto at login, or manually set Busy/Away</p>
         </div>
       </div>
 
