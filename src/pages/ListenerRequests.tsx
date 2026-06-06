@@ -69,7 +69,7 @@ function RequestCard({ request, processing, onAccept, onDecline, onOpenChat }: R
         {isAccepted ? (
           <span className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 shrink-0 ml-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            In Progress
+            Accepted
           </span>
         ) : (
           <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 shrink-0 ml-2">
@@ -309,7 +309,7 @@ export default function ListenerRequests() {
               : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
           ].join(' ')}
         >
-          In Progress
+          Accepted
           <span className={`px-2 py-0.5 rounded-full text-xs ${activeTab === 'in_progress' ? 'bg-emerald-400/50' : 'bg-emerald-100'}`}>
             {requests.filter((r) => r.status === 'accepted').length}
           </span>
@@ -324,7 +324,7 @@ export default function ListenerRequests() {
               : 'bg-blue-50 text-blue-700 hover:bg-blue-100',
           ].join(' ')}
         >
-          Accepted today
+          Hold
           <span className={`px-2 py-0.5 rounded-full text-xs ${activeTab === 'accepted_today' ? 'bg-blue-400/50' : 'bg-blue-100'}`}>
             {acceptedToday}
           </span>
@@ -370,9 +370,9 @@ export default function ListenerRequests() {
               : activeTab === 'pending'
               ? 'No pending requests.'
               : activeTab === 'in_progress'
-              ? 'No in-progress chats.'
+              ? 'No accepted chats.'
               : activeTab === 'accepted_today'
-              ? 'No requests accepted today.'
+              ? 'No requests on hold.'
               : 'No listener requests right now.'}
           </p>
           <p className="text-sm text-slate-400 mt-1">
