@@ -8,7 +8,6 @@ import {
   listenToListenerRequests,
   acceptListenerRequest,
   declineListenerRequest,
-  fetchAcceptedTodayCount,
 } from '../lib/advisorConnections';
 
 function formatTimestamp(value: unknown): string {
@@ -110,7 +109,7 @@ function RequestCard({ request, processing, onAccept, onDecline, onOpenChat }: R
       {!isAccepted && (
         <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
           <button
-            onClick={(e) => { e.stopPropagation(); onAccept(); }}
+            onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); onAccept(); }}
             disabled={processing}
             className="flex items-center gap-1.5 text-sm font-semibold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-60 px-4 py-2 rounded-xl transition-colors flex-1 justify-center"
           >
@@ -122,7 +121,7 @@ function RequestCard({ request, processing, onAccept, onDecline, onOpenChat }: R
             {processing ? 'Accepting…' : 'Accept'}
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onDecline(); }}
+            onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); onDecline(); }}
             disabled={processing}
             className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 disabled:opacity-60 px-4 py-2 rounded-xl transition-colors flex-1 justify-center"
           >
@@ -156,8 +155,7 @@ export default function ListenerRequests() {
   const [search, setSearch] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
-  const [acceptedToday, setAcceptedToday] = useState(0);
-  const [activeTab, setActiveTab] = useState<'pending' | 'in_progress' | 'accepted_today' | null>(null);
+  const [activeTab, setActiveTab] = useState<'pending' | 'in_progress' | 'all'>('all');
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -181,14 +179,6 @@ export default function ListenerRequests() {
     return unsub;
   }, [currentUser]);
 
-  // Load accepted-today count (re-fetches after each accept)
-  const refreshTodayCount = useCallback(async () => {
-    if (!currentUser) return;
-    const count = await fetchAcceptedTodayCount(currentUser.uid);
-    setAcceptedToday(count);
-  }, [currentUser]);
-
-  useEffect(() => { refreshTodayCount(); }, [refreshTodayCount]);
 
   const handleAccept = useCallback(
     async (r: AdvisorConnection) => {
@@ -199,13 +189,12 @@ export default function ListenerRequests() {
       setProcessingId(null);
       if (ok) {
         showToast({ type: 'success', message: `Accepted — ${displayName} can now chat with you` });
-        refreshTodayCount();
         setTimeout(() => openListenerChat(r.id), 1200);
       } else {
         showToast({ type: 'error', message: 'Failed to accept — please try again.' });
       }
     },
-    [currentUser, processingId, openListenerChat, refreshTodayCount]
+    [currentUser, processingId, openListenerChat]
   );
 
   const handleDecline = useCallback(
@@ -220,17 +209,9 @@ export default function ListenerRequests() {
     [currentUser, processingId]
   );
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayStartSec = todayStart.getTime() / 1000;
-
   const tabFiltered = requests.filter((r) => {
     if (activeTab === 'pending') return r.status === 'pending';
     if (activeTab === 'in_progress') return r.status === 'accepted';
-    if (activeTab === 'accepted_today') {
-      const sec = (r.acceptedAt as { seconds?: number })?.seconds ?? 0;
-      return r.status === 'accepted' && sec >= todayStartSec;
-    }
     return true;
   });
 
@@ -286,7 +267,7 @@ export default function ListenerRequests() {
       {/* ── Filter tabs ── */}
       <div className="flex flex-wrap gap-3">
         <button
-          onClick={() => setActiveTab(activeTab === 'pending' ? null : 'pending')}
+          onClick={() => setActiveTab(activeTab === 'pending' ? 'all' : 'pending')}
           className={[
             'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all',
             activeTab === 'pending'
@@ -301,7 +282,7 @@ export default function ListenerRequests() {
         </button>
 
         <button
-          onClick={() => setActiveTab(activeTab === 'in_progress' ? null : 'in_progress')}
+          onClick={() => setActiveTab(activeTab === 'in_progress' ? 'all' : 'in_progress')}
           className={[
             'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all',
             activeTab === 'in_progress'
@@ -316,17 +297,17 @@ export default function ListenerRequests() {
         </button>
 
         <button
-          onClick={() => setActiveTab(activeTab === 'accepted_today' ? null : 'accepted_today')}
+          onClick={() => setActiveTab('all')}
           className={[
             'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-all',
-            activeTab === 'accepted_today'
+            activeTab === 'all'
               ? 'bg-blue-500 text-white shadow-md shadow-blue-200'
               : 'bg-blue-50 text-blue-700 hover:bg-blue-100',
           ].join(' ')}
         >
-          Hold
-          <span className={`px-2 py-0.5 rounded-full text-xs ${activeTab === 'accepted_today' ? 'bg-blue-400/50' : 'bg-blue-100'}`}>
-            {acceptedToday}
+          All
+          <span className={`px-2 py-0.5 rounded-full text-xs ${activeTab === 'all' ? 'bg-blue-400/50' : 'bg-blue-100'}`}>
+            {requests.length}
           </span>
         </button>
       </div>
@@ -371,8 +352,8 @@ export default function ListenerRequests() {
               ? 'No pending requests.'
               : activeTab === 'in_progress'
               ? 'No accepted chats.'
-              : activeTab === 'accepted_today'
-              ? 'No requests on hold.'
+              : activeTab === 'all'
+              ? 'No listener requests.'
               : 'No listener requests right now.'}
           </p>
           <p className="text-sm text-slate-400 mt-1">
