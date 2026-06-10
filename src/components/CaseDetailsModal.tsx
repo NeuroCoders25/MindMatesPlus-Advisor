@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   X, MessageSquare, Send, ShieldCheck, CheckCircle2,
-  AlertCircle, Clock, Tag, ExternalLink, Activity,
+  AlertCircle, Clock, Tag, ExternalLink, Activity, CornerUpLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Timestamp } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { AdvisorConnection, CaseMessage, RiskLevel } from '../types';
+import ReplyPreview from './ReplyPreview';
+import QuotedMessage from './QuotedMessage';
 import {
   fetchCaseUserProfile,
   markCaseReviewed,
@@ -18,6 +20,7 @@ import {
   APPROVED_CATEGORIES,
 } from '../lib/advisorConnections';
 import { cn } from '../lib/utils';
+import { safeText } from '../services/cryptoService';
 import UserDetailsModal from './UserDetailsModal';
 
 interface CaseDetailsModalProps {
@@ -75,6 +78,8 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
   const [messages, setMessages] = useState<CaseMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<CaseMessage | null>(null);
+  const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
   const [approveSuccess, setApproveSuccess] = useState(false);
   const [approvedCategory, setApprovedCategory] = useState<string>('Moderate Support');
@@ -86,10 +91,14 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
   const [isFullProfileOpen, setIsFullProfileOpen] = useState(false);
   const [wellnessInput, setWellnessInput] = useState('');
   const [wellnessNote, setWellnessNote] = useState('');
-  const [updatingWellness, setUpdatingWellness] = useState(false);
-  const [wellnessSuccess, setWellnessSuccess] = useState(false);
   const [wellnessError, setWellnessError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToMessage = (id: string) => {
+    document.getElementById(`msg-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedMsgId(id);
+    setTimeout(() => setHighlightedMsgId(null), 1500);
+  };
 
   useEffect(() => {
     if (!isOpen || !connection.userId) return;
@@ -138,8 +147,8 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
       setAdvisorNote('');
       setWellnessInput('');
       setWellnessNote('');
-      setWellnessSuccess(false);
       setWellnessError('');
+      setReplyingTo(null);
     }
   }, [isOpen, connection.id]);
 
@@ -147,6 +156,23 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
     if (!currentUser || !approvedCategory || isApproved) return;
     setApproving(true);
     try {
+      if (wellnessInput.trim()) {
+        const parsed = parseInt(wellnessInput, 10);
+        if (isNaN(parsed) || parsed < 0 || parsed > 100) {
+          setWellnessError('Enter a valid wellness score between 0 and 100.');
+          return;
+        }
+        setWellnessError('');
+        await updateUserWellnessScoreByAdvisor(
+          connection.userId,
+          currentUser.uid,
+          parsed,
+          wellnessScore,
+          wellnessNote.trim() || undefined
+        );
+        setUserProfile((prev) => ({ ...prev, wellnessScore: parsed }));
+        setWellnessNote('');
+      }
       await approveUserForNormalAccess(
         connection.id,
         connection.userId,
@@ -179,10 +205,20 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
     e.preventDefault();
     if (!newMessage.trim() || !currentUser) return;
     const text = newMessage.trim();
+    const pendingReply = replyingTo;
     setNewMessage('');
+    setReplyingTo(null);
     setSending(true);
     try {
-      await sendAdvisorCaseMessage(connection.id, currentUser.uid, connection.userId, text);
+      const replyPayload = pendingReply
+        ? {
+            messageId: pendingReply.id,
+            snippetPlain: pendingReply.messageText,
+            senderName: pendingReply.senderRole === 'advisor' ? 'Advisor' : nickName,
+            senderId: pendingReply.senderId,
+          }
+        : null;
+      await sendAdvisorCaseMessage(connection.id, currentUser.uid, connection.userId, text, replyPayload);
     } catch (err) {
       console.error('Error sending message:', err);
     } finally {
@@ -190,35 +226,7 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
     }
   }
 
-  async function handleUpdateWellnessScore() {
-    const parsed = parseInt(wellnessInput, 10);
-    if (!currentUser || isNaN(parsed) || parsed < 0 || parsed > 100) {
-      setWellnessError('Enter a valid score between 0 and 100.');
-      return;
-    }
-    setUpdatingWellness(true);
-    setWellnessSuccess(false);
-    setWellnessError('');
-    try {
-      await updateUserWellnessScoreByAdvisor(
-        connection.userId,
-        currentUser.uid,
-        parsed,
-        wellnessScore,
-        wellnessNote.trim() || undefined
-      );
-      setUserProfile((prev) => ({ ...prev, wellnessScore: parsed }));
-      setWellnessSuccess(true);
-      setWellnessNote('');
-    } catch (err) {
-      console.error('Error updating wellness score:', err);
-      setWellnessError('Failed to update score. Please try again.');
-    } finally {
-      setUpdatingWellness(false);
-    }
-  }
-
-  // Resolve nickname in order: connection doc → user doc → mentalHealthProfile subcollection.
+// Resolve nickname in order: connection doc → user doc → mentalHealthProfile subcollection.
   // userDoc may be unreadable due to Firestore advisor rules, so fallback to profile subcollection.
   const nickName =
     connection.nickName ||
@@ -438,7 +446,6 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
                       value={wellnessInput}
                       onChange={(e) => {
                         setWellnessInput(e.target.value);
-                        setWellnessSuccess(false);
                         setWellnessError('');
                       }}
                       placeholder="0 – 100"
@@ -451,25 +458,11 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
                       rows={2}
                       className="w-full text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-300 transition-colors resize-none placeholder-slate-300 mb-2"
                     />
-                    {wellnessSuccess && (
-                      <p className="text-[10px] text-emerald-600 font-semibold mb-1.5 flex items-center gap-1">
-                        <CheckCircle2 size={11} />
-                        Mental wellness score updated successfully.
-                      </p>
-                    )}
                     {wellnessError && (
                       <p className="text-[10px] text-red-500 font-semibold mb-1.5">
                         {wellnessError}
                       </p>
                     )}
-                    <button
-                      onClick={handleUpdateWellnessScore}
-                      disabled={updatingWellness || !wellnessInput.trim()}
-                      className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-xs transition-all"
-                    >
-                      <Activity size={13} />
-                      {updatingWellness ? 'Updating…' : 'Update Wellness Score'}
-                    </button>
                   </div>
                 )}
 
@@ -576,25 +569,45 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
                 ) : (
                   messages.map((msg) => {
                     const isAdvisor = msg.senderRole === 'advisor';
+                    const isHighlighted = highlightedMsgId === msg.id;
                     return (
                       <motion.div
                         key={msg.id}
+                        id={`msg-${msg.id}`}
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className={cn('flex', isAdvisor ? 'justify-end' : 'justify-start')}
+                        className={cn(
+                          'flex group',
+                          isAdvisor ? 'justify-end' : 'justify-start',
+                          isHighlighted && 'ring-2 ring-indigo-400 ring-offset-2 rounded-2xl'
+                        )}
                       >
                         <div className={cn('max-w-[75%]', isAdvisor ? 'items-end' : 'items-start')}>
-                          <p
+                          <div
                             className={cn(
-                              'text-[10px] font-bold uppercase tracking-wide mb-1',
-                              isAdvisor ? 'text-right text-brand-400' : 'text-left text-slate-400'
+                              'flex items-center gap-1.5 mb-1',
+                              isAdvisor ? 'justify-end' : 'justify-start'
                             )}
                           >
-                            {isAdvisor ? 'ADVISOR' : nickName.split(' ')[0].toUpperCase()}{' '}
-                            <span className="font-normal normal-case tracking-normal">
-                              {formatTime(msg.createdAt)}
-                            </span>
-                          </p>
+                            <p
+                              className={cn(
+                                'text-[10px] font-bold uppercase tracking-wide',
+                                isAdvisor ? 'text-brand-400' : 'text-slate-400'
+                              )}
+                            >
+                              {isAdvisor ? 'ADVISOR' : nickName.split(' ')[0].toUpperCase()}{' '}
+                              <span className="font-normal normal-case tracking-normal">
+                                {formatTime(msg.createdAt)}
+                              </span>
+                            </p>
+                            <button
+                              onClick={() => setReplyingTo(msg)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-slate-300 hover:text-indigo-500 rounded"
+                              title="Reply"
+                            >
+                              <CornerUpLeft size={11} />
+                            </button>
+                          </div>
                           <div
                             className={cn(
                               'px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm',
@@ -603,7 +616,14 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
                                 : 'bg-slate-100 text-slate-700 rounded-tl-sm'
                             )}
                           >
-                            {msg.messageText}
+                            {msg.replyTo && (
+                              <QuotedMessage
+                                replyTo={msg.replyTo}
+                                onScrollTo={scrollToMessage}
+                                variant={isAdvisor ? 'light' : 'default'}
+                              />
+                            )}
+                            {safeText(msg.messageText)}
                           </div>
                         </div>
                       </motion.div>
@@ -627,6 +647,13 @@ export default function CaseDetailsModal({ isOpen, onClose, connection }: CaseDe
 
               {/* Message Input */}
               <form onSubmit={handleSend} className="px-5 pb-4 shrink-0">
+                {replyingTo && (
+                  <ReplyPreview
+                    senderName={replyingTo.senderRole === 'advisor' ? 'Advisor' : nickName}
+                    snippet={replyingTo.messageText}
+                    onCancel={() => setReplyingTo(null)}
+                  />
+                )}
                 <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5">
                   <input
                     type="text"

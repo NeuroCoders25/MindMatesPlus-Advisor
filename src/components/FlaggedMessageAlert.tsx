@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { FlaggedAlert } from '../types';
+import { decryptOne, safeText, EncryptedMessage } from '../services/cryptoService';
 
 // ── source config ────────────────────────────────────────────────────────────
 
@@ -140,13 +141,21 @@ export default function FlaggedMessageAlert() {
               const data = c.doc.data() as Record<string, unknown>;
               if (!isFlaggedDoc(data)) return;
 
-              pushAlert({
-                id: compositeKey,
-                source,
-                senderName: getSenderName(data),
-                snippet: getSnippet(data),
-                timestamp: new Date(),
-                navPath,
+              const senderName = getSenderName(data);
+              const rawText = (
+                data.text ?? data.message ?? data.content ?? data.body ?? data.entry ?? ''
+              ) as EncryptedMessage | string;
+
+              decryptOne(rawText).then((plain) => {
+                const snippet = plain.slice(0, 120) + (plain.length > 120 ? '…' : '');
+                pushAlert({
+                  id: compositeKey,
+                  source,
+                  senderName,
+                  snippet,
+                  timestamp: new Date(),
+                  navPath,
+                });
               });
             });
         },
@@ -213,7 +222,7 @@ export default function FlaggedMessageAlert() {
               {/* Body */}
               <div className="px-4 py-3">
                 <p className="text-xs font-semibold text-slate-700 mb-1">{alert.senderName}</p>
-                <p className="text-xs text-slate-600 leading-relaxed line-clamp-3">{alert.snippet}</p>
+                <p className="text-xs text-slate-600 leading-relaxed line-clamp-3">{safeText(alert.snippet)}</p>
               </div>
 
               {/* Footer */}

@@ -1,7 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { LiveChatMessage } from '../types';
 import { cn } from '../lib/utils';
-import { AlertTriangle, CheckCircle, FileText, Trash2, XCircle } from 'lucide-react';
+import { safeText } from '../services/cryptoService';
+import { AlertTriangle, CheckCircle, CornerUpLeft, FileText, Trash2, XCircle } from 'lucide-react';
+import QuotedMessage from './QuotedMessage';
 
 interface ChatViewerProps {
   messages: LiveChatMessage[];
@@ -9,6 +11,7 @@ interface ChatViewerProps {
   selectedFlaggedMsgId?: string;
   onFlaggedMessageClick?: (msg: LiveChatMessage) => void;
   onDeleteMessage?: (msg: LiveChatMessage) => void;
+  onReply?: (msg: LiveChatMessage) => void;
 }
 
 function formatTime(timestamp: Date | null): string {
@@ -16,12 +19,26 @@ function formatTime(timestamp: Date | null): string {
   return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function ChatViewer({ messages, currentUserId, selectedFlaggedMsgId, onFlaggedMessageClick, onDeleteMessage }: ChatViewerProps) {
+export default function ChatViewer({
+  messages,
+  currentUserId,
+  selectedFlaggedMsgId,
+  onFlaggedMessageClick,
+  onDeleteMessage,
+  onReply,
+}: ChatViewerProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const scrollToMessage = (id: string) => {
+    document.getElementById(`msg-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedId(id);
+    setTimeout(() => setHighlightedId(null), 1500);
+  };
 
   return (
     <div className="flex flex-col gap-4 flex-1 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 min-h-0">
@@ -37,20 +54,22 @@ export default function ChatViewer({ messages, currentUserId, selectedFlaggedMsg
         const isDeleted = Boolean(msg.deletedByAdvisor);
         const effectiveStatus = msg.reviewStatus ?? (msg.advisorApproved ? 'approved' : 'pending');
         const isApproved = msg.isFlagged && effectiveStatus === 'approved';
+        const isHighlighted = highlightedId === msg.id;
 
         return (
           <div
+            id={`msg-${msg.id}`}
             key={msg.id}
             className={cn(
               'group flex flex-col max-w-[80%] transition-all',
               isSelf ? 'self-end items-end' : 'self-start items-start',
               !isDeleted && msg.isFlagged && onFlaggedMessageClick && 'cursor-pointer',
-              isSelected && 'ring-2 ring-brand-400 ring-offset-2 rounded-2xl'
+              isSelected && 'ring-2 ring-brand-400 ring-offset-2 rounded-2xl',
+              isHighlighted && 'ring-2 ring-indigo-400 ring-offset-2 rounded-2xl'
             )}
             onClick={() => !isDeleted && msg.isFlagged && onFlaggedMessageClick?.(msg)}
           >
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              {/* Only show "Flagged" badge for messages that have NOT been approved */}
               {!isDeleted && msg.isFlagged && !isApproved && (
                 <span className="flex items-center gap-0.5 text-[10px] font-bold text-red-500 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-md">
                   <AlertTriangle size={9} />
@@ -80,7 +99,21 @@ export default function ChatViewer({ messages, currentUserId, selectedFlaggedMsg
               </span>
               <span className="text-[10px] text-slate-300">{formatTime(msg.timestamp)}</span>
 
-              {/* Delete button — visible on hover, only when handler provided and not already deleted */}
+              {/* Reply button — hover-reveal */}
+              {onReply && !isDeleted && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReply(msg);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-slate-300 hover:text-indigo-500 rounded"
+                  title="Reply"
+                >
+                  <CornerUpLeft size={11} />
+                </button>
+              )}
+
+              {/* Delete button — hover-reveal */}
               {onDeleteMessage && !isDeleted && (
                 <button
                   onClick={(e) => {
@@ -103,7 +136,6 @@ export default function ChatViewer({ messages, currentUserId, selectedFlaggedMsg
               <div
                 className={cn(
                   'px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm',
-                  // Approved flagged messages render as normal messages (no red styling)
                   msg.isFlagged && !isApproved
                     ? isSelected
                       ? 'bg-red-100 border-2 border-red-400 text-red-900'
@@ -113,7 +145,14 @@ export default function ChatViewer({ messages, currentUserId, selectedFlaggedMsg
                       : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none',
                 )}
               >
-                {msg.text}
+                {msg.replyTo && (
+                  <QuotedMessage
+                    replyTo={msg.replyTo}
+                    onScrollTo={scrollToMessage}
+                    variant={isSelf && !(msg.isFlagged && !isApproved) ? 'light' : 'default'}
+                  />
+                )}
+                {safeText(msg.text)}
               </div>
             )}
 

@@ -105,7 +105,7 @@ export interface AdvisorConnection {
   nickName?: string;
   advisorId: string;
   advisorName?: string;
-  status: 'pending' | 'accepted' | 'reviewed' | 'approved';
+  status: 'pending' | 'accepted' | 'reviewed' | 'approved' | 'declined';
   caseType: string;
   reason: string;
   userMentalHealthCategory: string;
@@ -114,6 +114,10 @@ export interface AdvisorConnection {
   createdAt: unknown;
   updatedAt?: unknown;
   approvedAt?: unknown;
+  acceptedAt?: unknown;
+  acceptedByAdvisorId?: string;
+  declinedAt?: unknown;
+  declineReason?: string;
 }
 
 export interface PeerGroup {
@@ -127,6 +131,20 @@ export interface PeerGroup {
   imageUrl?: string;
 }
 
+export interface ReplyTo {
+  messageId: string;
+  snippet: string;
+  senderName: string;
+  senderId: string;
+}
+
+export interface ReplyToPayload {
+  messageId: string;
+  snippetPlain: string;
+  senderName: string;
+  senderId: string;
+}
+
 export interface CaseMessage {
   id: string;
   senderId: string;
@@ -136,6 +154,7 @@ export interface CaseMessage {
   messageType: string;
   createdAt: unknown;
   isRead: boolean;
+  replyTo?: ReplyTo | null;
 }
 
 export interface LiveChatMessage {
@@ -153,6 +172,7 @@ export interface LiveChatMessage {
   reviewedBy?: string;
   reviewedAt?: Date | null;
   rejectionReason?: string | null;
+  replyTo?: ReplyTo | null;
 }
 
 export interface AdvisorPrivateMessage {
@@ -170,6 +190,7 @@ export interface AdvisorPrivateMessage {
   threadType?: string;
   flaggedMessageRef?: string;
   visibleTo?: string[];
+  replyTo?: ReplyTo | null;
 }
 
 export interface Resource {
@@ -183,4 +204,54 @@ export interface Resource {
   authorId: string;
   authorImageUrl?: string;
   createdAt: string;
+}
+
+export interface FlaggedAlert {
+  id: string;
+  source: 'group-chat' | 'ai-chat' | 'journal';
+  senderName: string;
+  snippet: string;
+  timestamp: Date;
+  navPath: string;
+}
+
+// ─── System Support (Advisor → Admin) ────────────────────────────────────────
+
+export type SupportCategory =
+  | 'Technical Issue'
+  | 'Urgent Case'
+  | 'System Error'
+  | 'Consultation'
+  | 'Policy Question'
+  | 'Other';
+
+export type SupportPriority = 'Low' | 'Medium' | 'High' | 'Critical';
+
+export type SupportStatus = 'pending' | 'in_progress' | 'resolved' | 'closed';
+
+export interface SupportRequest {
+  id: string;
+  advisorId: string;
+  advisorName: string;
+  adminId?: string;
+  adminName?: string;
+  category: SupportCategory;
+  priority: SupportPriority;
+  subject: string;
+  description: string;
+  status: SupportStatus;
+  createdAt: unknown;
+  updatedAt?: unknown;
+  resolvedAt?: unknown;
+  chatId?: string;
+}
+
+export interface AdminAvailability {
+  id: string;
+  name: string;
+  email?: string;
+  role?: string;
+  availability: 'online' | 'busy' | 'away' | 'offline';
+  profileImageUrl?: string;
+  lastSeen?: unknown;
 }

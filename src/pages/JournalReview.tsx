@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BookOpen, Search, Calendar, Smile, Meh, Frown, Loader2, WifiOff } from 'lucide-react';
+import { ArrowDownWideNarrow, BookOpen, Search, Smile, Meh, Frown, Loader2, WifiOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { db } from '../lib/firebase';
@@ -15,8 +15,9 @@ import {
 import { JournalEntry } from '../types';
 import NotesModal from '../components/NotesModal';
 
-type EnrichedJournal = JournalEntry & { userName: string; isFlagged: boolean };
+type EnrichedJournal = JournalEntry & { userName: string; isFlagged: boolean; timestamp: number };
 type SentimentFilter = 'All' | 'Positive' | 'Neutral' | 'Negative';
+type SortOption = 'Newest' | 'Oldest' | 'Most Positive' | 'Most Negative';
 
 // ---- helpers ----
 
@@ -31,10 +32,101 @@ function toDateString(value: unknown): string {
   return String(value) || '—';
 }
 
-function parseSentiment(value: unknown): number {
+function toTimestamp(value: unknown): number {
+  if (!value) return 0;
+  if (value instanceof Timestamp) return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'seconds' in value &&
+    typeof (value as { seconds: unknown }).seconds === 'number'
+  ) {
+    return (value as { seconds: number }).seconds * 1000;
+  }
+  const d = new Date(String(value));
+  return isNaN(d.getTime()) ? 0 : d.getTime();
+}
+
+function clampSentiment(value: number): number {
+  return Math.max(-1, Math.min(1, value));
+}
+
+function scoreFromLabel(value: unknown): number | null {
+  const label = String(value ?? '').toLowerCase().trim();
+  if (!label) return null;
+
+  const positiveTerms = [
+    'positive',
+    'happy',
+    'joy',
+    'calm',
+    'excited',
+    'hopeful',
+    'normal',
+    'well',
+    'good',
+    'thriving',
+    'recovery',
+    'improvement',
+  ];
+  const negativeTerms = [
+    'negative',
+    'sad',
+    'depress',
+    'anxi',
+    'angry',
+    'stress',
+    'worried',
+    'fear',
+    'crisis',
+    'self-harm',
+    'risk',
+    'bad',
+  ];
+
+  if (negativeTerms.some(term => label.includes(term))) return -0.8;
+  if (positiveTerms.some(term => label.includes(term))) return 0.8;
+  if (label.includes('neutral') || label.includes('mixed') || label.includes('meh')) return 0;
+  return null;
+}
+
+function scoreFromProbabilities(value: unknown): number | null {
+  if (!value || typeof value !== 'object') return null;
+  const probs = value as Record<string, unknown>;
+  const normal = Number(probs.normal ?? probs.positive);
+  const anxiety = Number(probs.anxiety);
+  const depression = Number(probs.depression);
+  const negative = Math.max(
+    Number.isNaN(anxiety) ? 0 : anxiety,
+    Number.isNaN(depression) ? 0 : depression,
+  );
+
+  if (!Number.isNaN(normal) || negative > 0) {
+    return clampSentiment((Number.isNaN(normal) ? 0 : normal) - negative);
+  }
+  return null;
+}
+
+function parseSentiment(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    return (
+      parseSentiment(record.sentiment) ??
+      parseSentiment(record.sentimentScore) ??
+      parseSentiment(record.score) ??
+      scoreFromLabel(record.prediction ?? record.label ?? record.category) ??
+      scoreFromProbabilities(record.probabilities)
+    );
+  }
+  if (typeof value === 'string') {
+    const labelScore = scoreFromLabel(value);
+    if (labelScore !== null) return labelScore;
+  }
   const n = Number(value);
-  if (isNaN(n)) return 0;
-  return Math.max(-1, Math.min(1, n));
+  if (isNaN(n)) return null;
+  return clampSentiment(n);
 }
 
 function parseTags(value: unknown): string[] {
@@ -43,29 +135,53 @@ function parseTags(value: unknown): string[] {
   return [];
 }
 
+function resolveJournalSentiment(data: Record<string, unknown>, tags: string[]): number {
+  const explicitScore = parseSentiment(
+    data.sentiment ?? data.sentimentScore ?? data.sentiment_score ?? data.sentimentAnalysis,
+  );
+  if (explicitScore !== null) return explicitScore;
+
+  const mlScore = parseSentiment(data.ml_analysis ?? data.bertPrediction ?? data.bert_prediction);
+  if (mlScore !== null) return mlScore;
+
+  const labelScore = parseSentiment(
+    data.sentimentLabel ??
+      data.sentiment_label ??
+      data.sentimentCategory ??
+      data.emotion ??
+      data.mood ??
+      data.mood_tag ??
+      tags.join(' '),
+  );
+  if (labelScore !== null) return labelScore;
+
+  return parseSentiment(data.score) ?? 0;
+}
+
 function parseJournal(
   id: string,
   userId: string,
   userName: string,
   data: Record<string, unknown>,
 ): EnrichedJournal {
+  const rawDate = data.date ?? data.createdAt ?? data.timestamp;
+  const tags = parseTags(data.tags ?? data.mood_tag ?? data.keywords ?? data.emotions ?? []);
   return {
     id,
     userId,
-    date: toDateString(data.date ?? data.createdAt ?? data.timestamp),
+    date: toDateString(rawDate),
+    timestamp: toTimestamp(rawDate),
     content: String(data.content ?? data.text ?? data.entry ?? data.body ?? ''),
-    sentiment: parseSentiment(
-      data.sentiment ?? data.sentimentScore ?? data.score ?? data.sentimentAnalysis,
-    ),
-    tags: parseTags(data.tags ?? data.mood_tag ?? data.keywords ?? data.emotions ?? []),
+    sentiment: resolveJournalSentiment(data, tags),
+    tags,
     userName,
     isFlagged: Boolean(data.flagged ?? data.isFlagged ?? false),
   };
 }
 
 function sentimentLabel(score: number): SentimentFilter {
-  if (score >= 0) return 'Positive';
-  if (score >= -0.3) return 'Neutral';
+  if (score > 0.05) return 'Positive';
+  if (score >= -0.05) return 'Neutral';
   return 'Negative';
 }
 
@@ -77,6 +193,7 @@ export default function JournalReview() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>('All');
+  const [sortBy, setSortBy] = useState<SortOption>('Newest');
   const [flaggedIds, setFlaggedIds] = useState<Set<string>>(new Set());
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [selectedUserName, setSelectedUserName] = useState('');
@@ -149,7 +266,7 @@ export default function JournalReview() {
                 const userName = userMap.get(userId) ?? String(data.nickname ?? data.nickName ?? data.userName ?? data.name ?? 'Unknown');
                 return parseJournal(d.id, userId, userName, data);
               });
-              fetched.sort((a, b) => b.date.localeCompare(a.date));
+              fetched.sort((a, b) => b.timestamp - a.timestamp);
               setJournals(fetched);
               setLoading(false);
               return;
@@ -169,7 +286,7 @@ export default function JournalReview() {
           const userName = userMap.get(userId) ?? String(data.nickname ?? data.nickName ?? data.userName ?? data.name ?? 'Unknown');
           return parseJournal(d.id, userId, userName, data);
         });
-        fetched.sort((a, b) => b.date.localeCompare(a.date));
+        fetched.sort((a, b) => b.timestamp - a.timestamp);
         setJournals(fetched);
         setLoading(false);
         return;
@@ -197,19 +314,26 @@ export default function JournalReview() {
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return journals.filter(j => {
-      const matchesSearch =
-        !q ||
-        j.userName.toLowerCase().includes(q) ||
-        j.content.toLowerCase().includes(q) ||
-        j.tags.some(t => t.toLowerCase().includes(q));
+    return journals
+      .filter(j => {
+        const matchesSearch =
+          !q ||
+          j.userName.toLowerCase().includes(q) ||
+          j.content.toLowerCase().includes(q) ||
+          j.tags.some(t => t.toLowerCase().includes(q));
 
-      const matchesSentiment =
-        sentimentFilter === 'All' || sentimentLabel(j.sentiment) === sentimentFilter;
+        const matchesSentiment =
+          sentimentFilter === 'All' || sentimentLabel(j.sentiment) === sentimentFilter;
 
-      return matchesSearch && matchesSentiment;
-    });
-  }, [journals, searchQuery, sentimentFilter]);
+        return matchesSearch && matchesSentiment;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'Oldest') return a.timestamp - b.timestamp;
+        if (sortBy === 'Most Positive') return b.sentiment - a.sentiment;
+        if (sortBy === 'Most Negative') return a.sentiment - b.sentiment;
+        return b.timestamp - a.timestamp;
+      });
+  }, [journals, searchQuery, sentimentFilter, sortBy]);
 
   const toggleFlag = (id: string) => {
     setFlaggedIds(prev => {
@@ -246,10 +370,23 @@ export default function JournalReview() {
           />
         </div>
         <div className="flex items-center gap-2 w-full md:w-auto">
-          <button className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-200 transition-colors">
-            <Calendar size={16} />
-            Date Range
-          </button>
+          <label className="relative flex items-center">
+            <ArrowDownWideNarrow
+              className="pointer-events-none absolute left-3 text-slate-500"
+              size={16}
+            />
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as SortOption)}
+              className="bg-slate-100 text-slate-600 rounded-xl text-sm font-semibold pl-9 pr-4 py-2 outline-none border-none cursor-pointer"
+              aria-label="Sort journal entries"
+            >
+              <option value="Newest">Newest First</option>
+              <option value="Oldest">Oldest First</option>
+              <option value="Most Negative">Most Negative</option>
+              <option value="Most Positive">Most Positive</option>
+            </select>
+          </label>
           <select
             value={sentimentFilter}
             onChange={e => setSentimentFilter(e.target.value as SentimentFilter)}
@@ -307,26 +444,26 @@ export default function JournalReview() {
                   <div className="p-3 bg-slate-50 rounded-xl">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">AI Sentiment</p>
                     <div className="flex items-center gap-2">
-                      {journal.sentiment < -0.5
+                      {sentimentLabel(journal.sentiment) === 'Negative'
                         ? <Frown className="text-red-500" size={18} />
-                        : journal.sentiment < 0
+                        : sentimentLabel(journal.sentiment) === 'Neutral'
                           ? <Meh className="text-amber-500" size={18} />
                           : <Smile className="text-emerald-500" size={18} />}
                       <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
                         <div
                           className={cn(
                             'h-full rounded-full',
-                            journal.sentiment < -0.5
+                            sentimentLabel(journal.sentiment) === 'Negative'
                               ? 'bg-red-500'
-                              : journal.sentiment < 0
+                              : sentimentLabel(journal.sentiment) === 'Neutral'
                                 ? 'bg-amber-500'
                                 : 'bg-emerald-500',
                           )}
-                          style={{ width: `${Math.abs(journal.sentiment) * 100}%` }}
+                          style={{ width: `${Math.max(5, Math.abs(journal.sentiment) * 100)}%` }}
                         />
                       </div>
                       <span className="text-xs font-bold text-slate-600">
-                        {(journal.sentiment * 100).toFixed(0)}%
+                        {sentimentLabel(journal.sentiment)} {(journal.sentiment * 100).toFixed(0)}%
                       </span>
                     </div>
                   </div>

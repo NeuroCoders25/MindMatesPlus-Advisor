@@ -1,4 +1,3 @@
-import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -9,7 +8,10 @@ import {
   BarChart3,
   FileText,
   Settings,
-  Library
+  Library,
+  Video,
+  MessagesSquare,
+  HeadphonesIcon,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import logo from '../assets/logo.png';
@@ -18,14 +20,17 @@ import { useAuth } from '../context/AuthContext';
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
   { icon: AlertTriangle, label: 'Critical Cases', path: '/critical-cases' },
+  { icon: HeadphonesIcon, label: 'Listener Requests', path: '/listener-requests' },
   { icon: Users, label: 'User Monitoring', path: '/monitoring' },
   { icon: MessageSquare, label: 'Chat Monitoring', path: '/chat-review' },
+  { icon: Video, label: 'Group Calls', path: '/calls' },
   { icon: BookOpen, label: 'Journal Review', path: '/journal-review' },
   { icon: Library, label: 'Resources', path: '/resources' },
   { icon: BarChart3, label: 'AI Insights', path: '/insights' },
   { icon: FileText, label: 'Reports', path: '/reports' },
-  { icon: MessageSquare, label: 'Admin Chats', path: '/chat' },
-  { icon: Settings, label: 'Settings', path: '/settings' },
+  { icon: MessagesSquare,  label: 'Advisor Room',   path: '/advisor-room' },
+  { icon: HeadphonesIcon, label: 'System Support',  path: '/support' },
+  { icon: Settings,       label: 'Settings',        path: '/settings' },
 ];
 
 function getInitials(name: string) {

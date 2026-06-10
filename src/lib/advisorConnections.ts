@@ -12,7 +12,8 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { AdvisorConnection, CaseMessage } from '../types';
+import { AdvisorConnection, CaseMessage, ReplyToPayload } from '../types';
+import { encryptText, decryptBatch, safeText, EncryptedMessage } from '../services/cryptoService';
 
 export const APPROVED_CATEGORIES = [
   'Wellness - Thriving',
@@ -252,6 +253,172 @@ export async function approveUserCase(
   });
 }
 
+export function listenToListenerRequests(
+  advisorId: string,
+  onUpdate: (requests: AdvisorConnection[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  const q = query(
+    collection(db, 'advisorConnections'),
+    where('advisorId', '==', advisorId),
+    where('caseType', '==', 'listener_support')
+  );
+
+  return onSnapshot(
+    q,
+    async (snap) => {
+      const all = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<AdvisorConnection, 'id'>),
+      }));
+
+      // Show pending AND accepted (in-progress) — reviewed/declined are hidden
+      const visible = all.filter(
+        (c) => c.status === 'pending' || c.status === 'accepted'
+      );
+
+      const sorted = [...visible].sort((a, b) => {
+        const aTs = (a.createdAt as { seconds?: number })?.seconds ?? 0;
+        const bTs = (b.createdAt as { seconds?: number })?.seconds ?? 0;
+        return bTs - aTs;
+      });
+
+      const enriched = await Promise.all(
+        sorted.map(async (conn) => {
+          try {
+            const userSnap = await getDoc(doc(db, 'users', conn.userId));
+            const nickname = userSnap.exists()
+              ? (userSnap.data()?.nickname as string | undefined)
+              : undefined;
+            return { ...conn, nickName: nickname || conn.nickName };
+          } catch {
+            return conn;
+          }
+        })
+      );
+
+      onUpdate(enriched);
+    },
+    (err) => onError?.(err as Error)
+  );
+}
+
+export async function acceptListenerRequest(
+  connectionId: string,
+  userId: string,
+  advisorId: string
+): Promise<boolean> {
+  void userId; // user's access level is unchanged — do NOT touch mentalHealthProfile
+  try {
+    await updateDoc(doc(db, 'advisorConnections', connectionId), {
+      status: 'accepted',
+      acceptedAt: serverTimestamp(),
+      acceptedByAdvisorId: advisorId,
+      updatedAt: serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    console.error('[ListenerRequest] acceptListenerRequest failed:', err);
+    return false;
+  }
+}
+
+export async function declineListenerRequest(
+  connectionId: string,
+  reason?: string
+): Promise<boolean> {
+  try {
+    await updateDoc(doc(db, 'advisorConnections', connectionId), {
+      status: 'declined',
+      declinedAt: serverTimestamp(),
+      declineReason: reason ?? '',
+      updatedAt: serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    console.error('[ListenerRequest] declineListenerRequest failed:', err);
+    return false;
+  }
+}
+
+export function listenToActiveListenerChats(
+  advisorId: string,
+  onUpdate: (chats: AdvisorConnection[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  const q = query(
+    collection(db, 'advisorConnections'),
+    where('advisorId', '==', advisorId),
+    where('caseType', '==', 'listener_support')
+  );
+
+  return onSnapshot(
+    q,
+    async (snap) => {
+      const all = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<AdvisorConnection, 'id'>),
+      }));
+
+      const active = all.filter((c) => c.status === 'accepted' || c.status === 'approved');
+
+      const sorted = [...active].sort((a, b) => {
+        const aTs =
+          (a.acceptedAt as { seconds?: number })?.seconds ??
+          (a.createdAt as { seconds?: number })?.seconds ?? 0;
+        const bTs =
+          (b.acceptedAt as { seconds?: number })?.seconds ??
+          (b.createdAt as { seconds?: number })?.seconds ?? 0;
+        return bTs - aTs;
+      });
+
+      const enriched = await Promise.all(
+        sorted.map(async (conn) => {
+          try {
+            const userSnap = await getDoc(doc(db, 'users', conn.userId));
+            const nickname = userSnap.exists()
+              ? (userSnap.data()?.nickname as string | undefined)
+              : undefined;
+            return { ...conn, nickName: nickname || conn.nickName };
+          } catch {
+            return conn;
+          }
+        })
+      );
+
+      onUpdate(enriched);
+    },
+    (err) => onError?.(err as Error)
+  );
+}
+
+export async function fetchAcceptedTodayCount(advisorId: string): Promise<number> {
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, 'advisorConnections'),
+        where('advisorId', '==', advisorId),
+        where('caseType', '==', 'listener_support')
+      )
+    );
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    const midnightSecs = Math.floor(midnight.getTime() / 1000);
+    return snap.docs.filter((d) => {
+      const data = d.data();
+      return (
+        data.status === 'accepted' &&
+        typeof data.acceptedAt === 'object' &&
+        data.acceptedAt !== null &&
+        'seconds' in data.acceptedAt &&
+        (data.acceptedAt as { seconds: number }).seconds >= midnightSecs
+      );
+    }).length;
+  } catch {
+    return 0;
+  }
+}
+
 export function listenToCaseMessages(
   connectionId: string,
   onUpdate: (messages: CaseMessage[]) => void
@@ -260,13 +427,61 @@ export function listenToCaseMessages(
     collection(db, 'advisorConnections', connectionId, 'messages'),
     orderBy('createdAt', 'asc')
   );
-  return onSnapshot(q, (snap) => {
-    onUpdate(
-      snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<CaseMessage, 'id'>),
-      }))
-    );
+  let inFlight = false;
+  return onSnapshot(q, async (snap) => {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      const rawDocs = snap.docs.map((d) => ({ id: d.id, data: d.data() }));
+
+      // Interim: set crash-safe placeholder state immediately
+      onUpdate(
+        rawDocs.map((d) => {
+          const rawReplyTo = d.data.replyTo as Record<string, unknown> | undefined | null;
+          return {
+            id: d.id,
+            ...(d.data as Omit<CaseMessage, 'id'>),
+            messageText: safeText(d.data.messageText),
+            replyTo: rawReplyTo
+              ? {
+                  messageId: rawReplyTo.messageId as string,
+                  snippet: safeText(rawReplyTo.snippet),
+                  senderName: rawReplyTo.senderName as string,
+                  senderId: rawReplyTo.senderId as string,
+                }
+              : null,
+          };
+        })
+      );
+
+      // Final: decrypt properly
+      const texts = rawDocs.map((d) => (d.data.messageText ?? '') as EncryptedMessage | string);
+      const snippets = rawDocs.map(
+        (d) => ((d.data.replyTo as Record<string, unknown> | undefined)?.snippet ?? '') as EncryptedMessage | string
+      );
+      const decrypted = await decryptBatch([...texts, ...snippets]);
+      const n = rawDocs.length;
+      onUpdate(
+        rawDocs.map((d, i) => {
+          const rawReplyTo = d.data.replyTo as Record<string, unknown> | undefined | null;
+          return {
+            id: d.id,
+            ...(d.data as Omit<CaseMessage, 'id'>),
+            messageText: decrypted[i],
+            replyTo: rawReplyTo
+              ? {
+                  messageId: rawReplyTo.messageId as string,
+                  snippet: decrypted[n + i],
+                  senderName: rawReplyTo.senderName as string,
+                  senderId: rawReplyTo.senderId as string,
+                }
+              : null,
+          };
+        })
+      );
+    } finally {
+      inFlight = false;
+    }
   });
 }
 
@@ -274,19 +489,36 @@ export async function sendAdvisorCaseMessage(
   connectionId: string,
   advisorId: string,
   userId: string,
-  text: string
+  text: string,
+  replyTo?: ReplyToPayload | null
 ): Promise<void> {
+  const encrypted = await encryptText(text);
+  let replyToField: {
+    messageId: string;
+    snippet: EncryptedMessage | string;
+    senderName: string;
+    senderId: string;
+  } | null = null;
+  if (replyTo) {
+    replyToField = {
+      messageId: replyTo.messageId,
+      snippet: await encryptText(replyTo.snippetPlain.slice(0, 80)),
+      senderName: replyTo.senderName,
+      senderId: replyTo.senderId,
+    };
+  }
   await addDoc(collection(db, 'advisorConnections', connectionId, 'messages'), {
     senderId: advisorId,
     senderRole: 'advisor',
     receiverId: userId,
-    messageText: text,
+    messageText: encrypted,
     messageType: 'text',
     createdAt: serverTimestamp(),
     isRead: false,
+    ...(replyToField ? { replyTo: replyToField } : {}),
   });
   await updateDoc(doc(db, 'advisorConnections', connectionId), {
-    lastMessage: text,
+    lastMessage: encrypted,
     lastMessageSenderId: advisorId,
     lastMessageAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

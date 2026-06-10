@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Users,
   AlertCircle,
@@ -6,6 +7,8 @@ import {
   TrendingUp,
   Activity,
   ShieldAlert,
+  Star,
+  Headphones,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import DashboardCard from '../components/DashboardCard';
@@ -25,8 +28,9 @@ import {
 } from 'recharts';
 import { motion } from 'motion/react';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, getDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, getDoc, doc, getDocs, query, where } from 'firebase/firestore';
 import { User, Alert, RiskLevel } from '../types';
+import { subscribeAdvisorRatingSummary, RatingSummary } from '../services/advisorRatingService';
 
 // ─── helpers (shared with UserMonitoring / CriticalCases) ────────────────────
 
@@ -182,9 +186,31 @@ function Skeleton({ className }: { className?: string }) {
 }
 
 export default function Dashboard() {
-  const { advisorProfile } = useAuth();
+  const { advisorProfile, currentUser } = useAuth();
+  const navigate = useNavigate();
   const advisorName = advisorProfile?.name ?? 'Advisor';
   const { users, loading, error } = useDashboardData();
+
+  const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null);
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    return subscribeAdvisorRatingSummary(currentUser.uid, setRatingSummary);
+  }, [currentUser?.uid]);
+
+  const [listenerPendingCount, setListenerPendingCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    getDocs(
+      query(
+        collection(db, 'advisorConnections'),
+        where('advisorId', '==', currentUser.uid),
+        where('caseType', '==', 'listener_support'),
+        where('status', '==', 'pending')
+      )
+    )
+      .then((snap) => setListenerPendingCount(snap.size))
+      .catch(() => setListenerPendingCount(0));
+  }, [currentUser?.uid]);
 
   // ── derived stats ──────────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -303,9 +329,11 @@ export default function Dashboard() {
       )}
       
       {/* ── stat cards ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
         {loading ? (
           <>
+            <Skeleton className="h-[130px]" />
+            <Skeleton className="h-[130px]" />
             <Skeleton className="h-[130px]" />
             <Skeleton className="h-[130px]" />
             <Skeleton className="h-[130px]" />
@@ -313,30 +341,52 @@ export default function Dashboard() {
           </>
         ) : (
           <>
-            <DashboardCard 
-              title="High-Risk Users" 
+            <DashboardCard
+              title="High-Risk Users"
               value={stats.highRisk}
-              icon={Users} 
+              icon={Users}
               color="red"
             />
-            <DashboardCard 
-              title="Active Alerts" 
+            <DashboardCard
+              title="Active Alerts"
               value={stats.activeAlerts}
-              icon={AlertCircle} 
+              icon={AlertCircle}
               color="amber"
             />
-            <DashboardCard 
-              title="Active Today" 
+            <DashboardCard
+              title="Active Today"
               value={stats.activeToday}
-              icon={Activity} 
+              icon={Activity}
               color="brand"
             />
-            <DashboardCard 
-              title="Total Users" 
+            <DashboardCard
+              title="Total Users"
               value={stats.totalUsers}
-              icon={CheckCircle2} 
+              icon={CheckCircle2}
               color="emerald"
             />
+            <DashboardCard
+              title="My Rating"
+              value={
+                ratingSummary && ratingSummary.ratingCount > 0
+                  ? `${ratingSummary.averageRating.toFixed(1)} ★`
+                  : '—'
+              }
+              icon={Star}
+              color="amber"
+            />
+            <div
+              className="cursor-pointer"
+              onClick={() => navigate('/listener-requests')}
+              title="Go to Listener Requests"
+            >
+              <DashboardCard
+                title="Listener Requests"
+                value={listenerPendingCount ?? '—'}
+                icon={Headphones}
+                color="brand"
+              />
+            </div>
           </>
         )}
       </div>
