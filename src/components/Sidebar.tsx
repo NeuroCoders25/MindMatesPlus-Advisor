@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -16,6 +17,7 @@ import {
 import { cn } from '../lib/utils';
 import logo from '../assets/logo.png';
 import { useAuth } from '../context/AuthContext';
+import { subscribeListenerRequestCount } from './ListenerRequestAlertToast';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
@@ -45,6 +47,9 @@ function getInitials(name: string) {
 export default function Sidebar() {
   const { advisorProfile } = useAuth();
 
+  const [listenerRequestCount, setListenerRequestCount] = useState(0);
+  useEffect(() => subscribeListenerRequestCount(setListenerRequestCount), []);
+
   const name = advisorProfile?.name ?? 'Advisor';
   const role = advisorProfile?.role ?? '';
   const initials = getInitials(name);
@@ -59,21 +64,31 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            className={({ isActive }) => cn(
-              "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
-              isActive
-                ? "bg-[#1e2a52] text-brand-400 font-medium"
-                : "text-white/60 hover:bg-white/8 hover:text-white"
-            )}
-          >
-            <item.icon size={20} className="transition-colors" />
-            <span>{item.label}</span>
-          </NavLink>
-        ))}
+        {navItems.map((item) => {
+          const isListenerRequests = item.path === '/listener-requests';
+          const badge = isListenerRequests && listenerRequestCount > 0 ? listenerRequestCount : null;
+
+          return (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              className={({ isActive }) => cn(
+                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
+                isActive
+                  ? "bg-[#1e2a52] text-brand-400 font-medium"
+                  : "text-white/60 hover:bg-white/8 hover:text-white"
+              )}
+            >
+              <item.icon size={20} className="transition-colors" />
+              <span className="flex-1">{item.label}</span>
+              {badge !== null && (
+                <span className="min-w-5 h-5 px-1.5 rounded-full bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                  {badge > 99 ? '99+' : badge}
+                </span>
+              )}
+            </NavLink>
+          );
+        })}
       </nav>
 
       <div className="p-4 border-t border-slate-100">
