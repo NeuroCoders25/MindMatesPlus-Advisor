@@ -105,7 +105,7 @@ export interface AdvisorConnection {
   nickName?: string;
   advisorId: string;
   advisorName?: string;
-  status: 'pending' | 'accepted' | 'reviewed' | 'approved' | 'declined';
+  status: 'pending' | 'accepted' | 'reviewed' | 'approved' | 'declined' | 'system_approved';
   caseType: string;
   reason: string;
   userMentalHealthCategory: string;
@@ -118,6 +118,12 @@ export interface AdvisorConnection {
   acceptedByAdvisorId?: string;
   declinedAt?: unknown;
   declineReason?: string;
+  paymentStatus?: 'paid' | 'trial' | 'pending_payment';
+  sessionFeeUSD?: number;
+  /** Set by backend when trial period has elapsed. Drives live chip update via onSnapshot. */
+  trialExpired?: boolean;
+  /** Set by backend after advisor extends trial. Null/absent = not yet extended. */
+  trialExtendedAt?: unknown;
 }
 
 export interface PeerGroup {
