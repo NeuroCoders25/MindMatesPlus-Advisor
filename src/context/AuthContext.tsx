@@ -22,6 +22,8 @@ export interface AdvisorProfile {
   about?: string;
   isModerator?: boolean;
   availability?: AvailabilityStatus;
+  sessionFeeUSD?: number;
+  feeDescription?: string;
 }
 
 interface AuthContextType {
@@ -122,6 +124,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               about: data.about,
               isModerator: data.isModerator ?? false,
               availability: data.availability ?? 'online',
+              sessionFeeUSD: data.sessionFeeUSD,
+              feeDescription: data.feeDescription,
             });
           }
         } catch {

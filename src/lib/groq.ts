@@ -4,11 +4,12 @@
 // advisor-only internal tool; move to a backend proxy for public apps.
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+export const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
 async function groqChat(
   systemPrompt: string,
   userContent: string,
-  model = 'llama3-8b-8192',
+  model = GROQ_MODEL,
 ): Promise<string> {
   const apiKey = import.meta.env.VITE_GROQ_API_KEY as string | undefined;
   if (!apiKey) throw new Error('VITE_GROQ_API_KEY is not set in your .env file');
@@ -52,7 +53,7 @@ and whether advisor intervention is recommended.
 Format as short bullet points. Start with a one-line overall mood assessment on the first line.
 Be concise — the advisor needs a quick overview, not a transcript.`,
     `Recent chat transcript:\n${transcript}`,
-    'llama-3.3-70b-versatile',
+    GROQ_MODEL,
   );
 }
 

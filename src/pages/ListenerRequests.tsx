@@ -26,6 +26,20 @@ interface Toast {
 }
 
 // ── Request Card ──────────────────────────────────────────────────────────────
+function PaymentPill({ paymentStatus, sessionFeeUSD }: { paymentStatus: string; sessionFeeUSD?: number }) {
+  if (paymentStatus === 'paid') {
+    const label = sessionFeeUSD != null ? `Paid $${sessionFeeUSD}` : 'Paid';
+    return <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-green-100 text-green-700">{label}</span>;
+  }
+  if (paymentStatus === 'trial') {
+    return <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-100 text-blue-700">Free trial</span>;
+  }
+  if (paymentStatus === 'pending_payment') {
+    return <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">Awaiting payment</span>;
+  }
+  return null;
+}
+
 interface RequestCardProps {
   request: AdvisorConnection;
   processing: boolean;
@@ -65,16 +79,21 @@ function RequestCard({ request, processing, onAccept, onDecline, onOpenChat }: R
             )}
           </div>
         </div>
-        {isAccepted ? (
-          <span className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 shrink-0 ml-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Accepted
-          </span>
-        ) : (
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 shrink-0 ml-2">
-            Pending
-          </span>
-        )}
+        <div className="flex flex-col items-end gap-1 shrink-0 ml-2">
+          {isAccepted ? (
+            <span className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Accepted
+            </span>
+          ) : (
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
+              Pending
+            </span>
+          )}
+          {request.paymentStatus && (
+            <PaymentPill paymentStatus={request.paymentStatus} sessionFeeUSD={request.sessionFeeUSD} />
+          )}
+        </div>
       </div>
 
       {/* Category */}

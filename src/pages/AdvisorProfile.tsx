@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { User, Upload, Loader2, CheckCircle, XCircle, Users, Save, Pencil } from 'lucide-react';
+import { User, Upload, Loader2, CheckCircle, XCircle, Users, Save, Pencil, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -45,6 +45,45 @@ export default function AdvisorProfile() {
   const [qualifications, setQualifications] = useState(advisorProfile?.qualifications ?? '');
   const [about, setAbout] = useState(advisorProfile?.about ?? '');
   const [isModerator, setIsModerator] = useState(advisorProfile?.isModerator ?? false);
+
+  const [sessionFeeInput, setSessionFeeInput] = useState<string>(
+    advisorProfile?.sessionFeeUSD !== undefined ? String(advisorProfile.sessionFeeUSD) : ''
+  );
+  const [feeDescriptionInput, setFeeDescriptionInput] = useState(advisorProfile?.feeDescription ?? '');
+  const [feeError, setFeeError] = useState('');
+  const [isSavingFee, setIsSavingFee] = useState(false);
+
+  function validateFee(input: string): string | null {
+    if (!input.trim()) return 'Please enter a session fee.';
+    const v = Number(input);
+    if (!isFinite(v) || isNaN(v)) return 'Please enter a valid number.';
+    if (v <= 0) return 'Fee must be greater than $0.';
+    if (v > 500) return 'Fee must be $500 or less.';
+    if (/\.\d{3,}/.test(input.trim())) return 'Maximum 2 decimal places allowed.';
+    return null;
+  }
+
+  async function handleSaveFee() {
+    if (!currentUser) return;
+    const errMsg = validateFee(sessionFeeInput);
+    if (errMsg) { setFeeError(errMsg); return; }
+    setFeeError('');
+    setIsSavingFee(true);
+    try {
+      const fee = Number(sessionFeeInput);
+      await updateDoc(doc(db, 'advisors', currentUser.uid), {
+        sessionFeeUSD: fee,
+        feeDescription: feeDescriptionInput,
+      });
+      updateAdvisorProfile({ sessionFeeUSD: fee, feeDescription: feeDescriptionInput });
+      showToast('success', 'Counseling fee saved');
+    } catch (err) {
+      console.error('Fee save failed:', err);
+      setFeeError('Save failed. Please try again.');
+    } finally {
+      setIsSavingFee(false);
+    }
+  }
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -301,6 +340,71 @@ export default function AdvisorProfile() {
               <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${isModerator ? 'translate-x-6' : 'translate-x-0'}`} />
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* ── Counseling Fee ── */}
+      <div className="glass-card p-8">
+        <div className="flex items-center gap-3 mb-2">
+          <DollarSign className="text-brand-500" size={20} />
+          <h3 className="text-lg font-bold text-slate-800">Counseling Fee</h3>
+        </div>
+        <p className="text-sm text-slate-500 mb-6">
+          Set the fee users will see when booking a session with you.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+              Session Fee (USD)
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium select-none">$</span>
+              <input
+                type="number"
+                min="0.01"
+                max="500"
+                step="0.01"
+                value={sessionFeeInput}
+                onChange={e => { setSessionFeeInput(e.target.value); setFeeError(''); }}
+                placeholder="e.g. 10"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-7 pr-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+              Fee Description
+            </label>
+            <input
+              type="text"
+              value={feeDescriptionInput}
+              onChange={e => setFeeDescriptionInput(e.target.value)}
+              placeholder="per week of chat support"
+              maxLength={120}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-50 transition-all"
+            />
+          </div>
+        </div>
+
+        <div className="bg-slate-50 rounded-xl px-4 py-3 text-xs text-slate-500 mb-4 leading-relaxed">
+          <span className="font-semibold text-slate-600">Suggested ranges: </span>
+          Counselor $5–15 · Advisor $5–12 · Psychologist $15–30 · Senior Psychologist $25–50 · Psychiatrist $40–80
+        </div>
+
+        {feeError && (
+          <p className="text-xs text-red-500 mb-3">{feeError}</p>
+        )}
+
+        <div className="flex justify-end">
+          <button
+            onClick={handleSaveFee}
+            disabled={isSavingFee}
+            className="px-6 py-2.5 bg-brand-500 text-white rounded-2xl font-bold text-sm shadow-lg shadow-brand-200 hover:bg-brand-600 disabled:opacity-50 transition-all flex items-center gap-2"
+          >
+            {isSavingFee ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            {isSavingFee ? 'Saving…' : 'Save Fee'}
+          </button>
         </div>
       </div>
 

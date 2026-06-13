@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import type { AvailabilityStatus } from '../context/AuthContext';
 import { subscribeAlertCount } from './FlaggedMessageAlert';
+import { subscribeListenerRequests } from './ListenerRequestAlertToast';
 import { AdvisorConnection } from '../types';
 import { listenToCriticalCases } from '../lib/advisorConnections';
 import { availabilityDotClass, availabilityLabel } from './AvailabilitySelector';
@@ -56,6 +57,11 @@ export default function Navbar() {
   const { currentUser, logout, advisorProfile, updateAvailability } = useAuth();
   const [pendingConnections, setPendingConnections] = useState<AdvisorConnection[]>([]);
 
+  // ── Pending listener requests (fed by the same Firestore listener that drives the sidebar badge) ──
+  const [pendingListenerRequests, setPendingListenerRequests] = useState<AdvisorConnection[]>([]);
+
+  useEffect(() => subscribeListenerRequests(setPendingListenerRequests), []);
+
   // IDs of notifications the advisor has already opened/clicked at least once
   const [seenIds, setSeenIds] = useState<Set<string>>(() => {
     try {
@@ -93,8 +99,8 @@ export default function Navbar() {
   // Unseen = pending connections not yet opened by the advisor
   const unseenCount = pendingConnections.filter((c) => !seenIds.has(c.id)).length;
 
-  // Combined badge: flagged-message toasts + unseen critical connections
-  const totalBadge = flaggedCount + unseenCount;
+  // Combined badge: flagged-message toasts + unseen critical connections + pending listener requests
+  const totalBadge = flaggedCount + unseenCount + pendingListenerRequests.length;
 
   // ── Notification dropdown ─────────────────────────────────────────────────
   const [notifOpen, setNotifOpen] = useState(false);
@@ -201,84 +207,128 @@ export default function Navbar() {
                   <AlertCircle size={15} className="text-rose-500" />
                   <h3 className="font-bold text-slate-800 text-sm">Notifications</h3>
                 </div>
-                {unseenCount > 0 && (
+                {(unseenCount + pendingListenerRequests.length) > 0 && (
                   <span className="text-[11px] bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded-full">
-                    {unseenCount} pending
+                    {unseenCount + pendingListenerRequests.length} pending
                   </span>
                 )}
               </div>
 
               {/* Connection list */}
               <div className="max-h-[360px] overflow-y-auto divide-y divide-slate-100">
-                {pendingConnections.length === 0 ? (
+                {pendingConnections.length === 0 && pendingListenerRequests.length === 0 ? (
                   <div className="px-4 py-10 text-center">
                     <Bell size={24} className="mx-auto mb-2 text-slate-300" />
                     <p className="text-sm text-slate-400">No notifications yet</p>
                   </div>
                 ) : (
-                  pendingConnections.slice(0, 10).map((conn) => {
-                    const isUnseen = !seenIds.has(conn.id);
-                    return (
-                    <div
-                      key={conn.id}
-                      className={`px-4 py-3 transition-colors ${isUnseen ? 'bg-rose-50 hover:bg-rose-100' : 'bg-white hover:bg-slate-50'}`}
-                    >
-                      {/* Connection body */}
-                      <div className="flex items-start gap-2.5 mb-2">
-                        <div className="mt-0.5 shrink-0">
-                          <span className={`block w-2 h-2 rounded-full ${isUnseen ? 'bg-rose-500' : 'bg-slate-300'}`} />
+                  <>
+                    {/* ── Listener request items (blue) ── */}
+                    {pendingListenerRequests.map((req) => (
+                      <div
+                        key={req.id}
+                        className="flex items-center gap-3 px-4 py-3 bg-blue-50 hover:bg-blue-100 transition-colors cursor-pointer"
+                        onClick={() => {
+                          setNotifOpen(false);
+                          navigate('/listener-requests');
+                        }}
+                      >
+                        <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-semibold text-sm flex-shrink-0 border border-blue-200">
+                          {(req.nickName || req.userName || 'U')[0].toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-bold text-slate-800 leading-tight">
-                            Critical Case Request
-                          </p>
-                          <p className="text-xs text-slate-700 mt-0.5 font-medium">
-                            {conn.nickName || conn.userName || '—'}
+                            New Listener Request
                           </p>
                           <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                            {conn.userEmail}
+                            {req.nickName || req.userName || 'A user'} is requesting listener support
                           </p>
-                          {conn.userMentalHealthCategory && (
-                            <p className="text-[11px] text-slate-400 mt-0.5">
-                              {conn.userMentalHealthCategory}
-                            </p>
-                          )}
-                          {conn.reason && (
-                            <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
-                              {conn.reason}
-                            </p>
-                          )}
                           <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-400">
                             <Clock size={10} />
-                            <span>{fmtTime(conn.createdAt)}</span>
+                            <span>{fmtTime(req.createdAt)}</span>
                           </div>
                         </div>
+                        <ArrowRight size={14} className="text-blue-400 flex-shrink-0" />
                       </div>
+                    ))}
 
-                      {/* Review button */}
-                      <button
-                        onClick={() => handleReviewConnection(conn)}
-                        className="flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-800 hover:underline transition-colors ml-4"
-                      >
-                        Review Case <ArrowRight size={10} />
-                      </button>
-                    </div>
-                  )})
+                    {/* ── Critical case items (rose) ── */}
+                    {pendingConnections.slice(0, 10).map((conn) => {
+                      const isUnseen = !seenIds.has(conn.id);
+                      return (
+                        <div
+                          key={conn.id}
+                          className={`px-4 py-3 transition-colors ${isUnseen ? 'bg-rose-50 hover:bg-rose-100' : 'bg-white hover:bg-slate-50'}`}
+                        >
+                          {/* Connection body */}
+                          <div className="flex items-start gap-2.5 mb-2">
+                            <div className="mt-0.5 shrink-0">
+                              <span className={`block w-2 h-2 rounded-full ${isUnseen ? 'bg-rose-500' : 'bg-slate-300'}`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold text-slate-800 leading-tight">
+                                Critical Case Request
+                              </p>
+                              <p className="text-xs text-slate-700 mt-0.5 font-medium">
+                                {conn.nickName || conn.userName || '—'}
+                              </p>
+                              <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                                {conn.userEmail}
+                              </p>
+                              {conn.userMentalHealthCategory && (
+                                <p className="text-[11px] text-slate-400 mt-0.5">
+                                  {conn.userMentalHealthCategory}
+                                </p>
+                              )}
+                              {conn.reason && (
+                                <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
+                                  {conn.reason}
+                                </p>
+                              )}
+                              <div className="flex items-center gap-1 mt-1 text-[10px] text-slate-400">
+                                <Clock size={10} />
+                                <span>{fmtTime(conn.createdAt)}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Review button */}
+                          <button
+                            onClick={() => handleReviewConnection(conn)}
+                            className="flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-800 hover:underline transition-colors ml-4"
+                          >
+                            Review Case <ArrowRight size={10} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </>
                 )}
               </div>
 
               {/* Footer */}
-              {pendingConnections.length > 10 && (
-                <div className="px-4 py-2.5 border-t border-slate-100 text-center">
-                  <button
-                    onClick={() => {
-                      setNotifOpen(false);
-                      navigate('/critical-cases');
-                    }}
-                    className="text-xs text-brand-500 font-semibold hover:underline"
-                  >
-                    View all in Critical Cases →
-                  </button>
+              {(pendingConnections.length > 10 || pendingListenerRequests.length > 0) && (
+                <div className="border-t border-slate-100 divide-y divide-slate-100">
+                  {pendingListenerRequests.length > 0 && (
+                    <div className="px-4 py-2.5 text-center">
+                      <button
+                        onClick={() => { setNotifOpen(false); navigate('/listener-requests'); }}
+                        className="text-xs text-blue-600 font-semibold hover:underline"
+                      >
+                        View all listener requests →
+                      </button>
+                    </div>
+                  )}
+                  {pendingConnections.length > 10 && (
+                    <div className="px-4 py-2.5 text-center">
+                      <button
+                        onClick={() => { setNotifOpen(false); navigate('/critical-cases'); }}
+                        className="text-xs text-brand-500 font-semibold hover:underline"
+                      >
+                        View all in Critical Cases →
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

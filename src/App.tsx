@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import FlaggedMessageAlert from './components/FlaggedMessageAlert';
 import CriticalCaseAlertToast from './components/CriticalCaseAlertToast';
+import ListenerRequestAlertToast from './components/ListenerRequestAlertToast';
 
 // Auth pages
 import Login from './pages/Login';
@@ -66,6 +67,8 @@ function ProtectedLayout() {
         <FlaggedMessageAlert />
         {/* Global critical-case alert toasts — driven by advisors/{id}/alerts sub-collection */}
         <CriticalCaseAlertToast />
+        {/* Global listener-request alert toasts — new pending listener_support connections */}
+        <ListenerRequestAlertToast />
       </div>
     </ListenerChatProvider>
   );

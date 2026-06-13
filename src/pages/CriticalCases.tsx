@@ -135,6 +135,16 @@ export default function CriticalCases() {
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [isCaseDetailsOpen, setIsCaseDetailsOpen] = useState(false);
 
+  // Toast
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const toastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showToast(message: string, type: 'success' | 'error') {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ message, type });
+    toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+  }
+
   // AI-flagged cases state (existing)
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
@@ -436,6 +446,7 @@ export default function CriticalCases() {
                     onAccept={handleAccept}
                     onMarkReviewed={handleMarkReviewed}
                     onClick={handleOpenCaseDetails}
+                    onShowToast={showToast}
                   />
                 </div>
               );
@@ -588,6 +599,20 @@ export default function CriticalCases() {
             setIsDetailsModalOpen(true);
           }}
         />
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <div
+          className={[
+            'fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-semibold max-w-sm transition-all',
+            toast.type === 'success'
+              ? 'bg-emerald-600 text-white'
+              : 'bg-red-600 text-white',
+          ].join(' ')}
+        >
+          {toast.type === 'success' ? '✓' : '⚠'} {toast.message}
+        </div>
       )}
     </motion.div>
   );
